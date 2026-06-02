@@ -1,5 +1,5 @@
 const authKey = process.env.GIGACHAT_AUTH_KEY;
-const prompt = process.argv.slice(2).join(" ") || "Напиши одно короткое приветствие.";
+const prompt = process.argv.slice(2).join(" ") || "Объясни, что такое API, одним предложением.";
 const model = process.env.GIGACHAT_MODEL || "GigaChat-2";
 const scope = process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS";
 
@@ -42,26 +42,64 @@ if (!tokenResponse.ok) {
   process.exit(1);
 }
 
-const response = await fetch("https://gigachat.devices.sberbank.ru/api/v1/chat/completions", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    Authorization: `Bearer ${tokenData.access_token}`
-  },
-  body: JSON.stringify({
-    model,
-    messages: [{ role: "user", content: prompt }]
-  })
-});
+async function askGigaChat({ messages, maxTokens, stop }) {
+  let response;
 
-const data = await response.json();
+  try {
+    response = await fetch("https://gigachat.devices.sberbank.ru/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${tokenData.access_token}`
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        ...(maxTokens ? { max_tokens: maxTokens } : {}),
+        ...(stop ? { stop } : {})
+      })
+    });
+  } catch (error) {
+    console.error("Ошибка сети:", error.message);
+    process.exit(1);
+  }
 
-if (!response.ok) {
-  console.error("Ошибка API:", data.message || data);
-  process.exit(1);
+  const data = await response.json();
+
+  if (!response.ok) {
+    console.error("Ошибка API:", data.message || data);
+    process.exit(1);
+  }
+
+  return data.choices?.[0]?.message?.content || JSON.stringify(data, null, 2);
 }
 
-const text = data.choices?.[0]?.message?.content;
+const uncontrolledAnswer = await askGigaChat({
+  messages: [{ role: "user", content: prompt }]
+});
 
-console.log(text || JSON.stringify(data, null, 2));
+const controlledAnswer = await askGigaChat({
+  messages: [
+    {
+      role: "user",
+      content: [
+        prompt,
+        "",
+        "Ответь строго в формате JSON:",
+        '{"answer":"короткий ответ","key_points":["пункт 1","пункт 2"]}',
+        "Ограничение: не больше 2 коротких пунктов в key_points.",
+        "Когда закончишь ответ, напиши ###END###."
+      ].join("\n")
+    }
+  ],
+  maxTokens: 120,
+  stop: ["###END###"]
+});
+
+console.log("Запрос:");
+console.log(prompt);
+console.log("\n=== Ответ без ограничений ===");
+console.log(uncontrolledAnswer);
+console.log("\n=== Ответ с ограничениями ===");
+console.log(controlledAnswer.trim());
