@@ -1,15 +1,15 @@
 const args = process.argv.slice(2);
 const useMock = args.includes("--mock");
-const customTask = args.filter((arg) => arg !== "--mock").join(" ");
+const customPrompt = args.filter((arg) => arg !== "--mock").join(" ");
 const authKey = process.env.GIGACHAT_AUTH_KEY;
 const model = process.env.GIGACHAT_MODEL || "GigaChat-2";
 const scope = process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS";
 
-const task =
-  customTask ||
-  "Улитка находится на дне колодца глубиной 10 метров. Днем она поднимается на 3 метра, ночью сползает на 2 метра. За сколько дней улитка выберется из колодца?";
+const prompt =
+  customPrompt ||
+  "Объясни, что такое API, простыми словами и придумай одну бытовую аналогию. Ответь в 3-4 предложениях.";
 
-const correctAnswer = "8 дней";
+const temperatures = [0, 0.7, 1.2];
 
 if (!useMock && !authKey) {
   console.error("Ошибка: задайте переменную окружения GIGACHAT_AUTH_KEY или запустите демо с --mock.");
@@ -24,34 +24,32 @@ function printSection(title, text) {
 }
 
 function buildMockAnswers() {
-  const generatedPrompt = [
-    "Реши логическую задачу про улитку. Учитывай, что после последнего дневного подъема",
-    "улитка выбирается из колодца и ночью уже не сползает. Дай краткий расчет и итог в днях."
-  ].join(" ");
-
-  return {
-    direct:
-      "Улитка каждый день в среднем поднимается на 1 метр, поэтому на 10 метров ей понадобится 10 дней.",
-    stepByStep: [
-      "День 1: поднялась до 3 м, ночью сползла до 2 м.",
-      "Каждые полные сутки до последнего дня дают +1 м.",
-      "К началу 8-го дня улитка будет на 7 м.",
-      "Днем 8-го дня она поднимется на 3 м и достигнет 10 м.",
-      "Ответ: 8 дней."
-    ].join("\n"),
-    generatedPrompt,
-    promptBased: [
-      "Нужно не считать последний ночной спуск.",
-      "После 7 суток улитка окажется на высоте 7 м.",
-      "На 8-й день она поднимется еще на 3 м и выберется.",
-      "Ответ: 8 дней."
-    ].join("\n"),
-    experts: [
-      "Аналитик: средний прирост 1 м в сутки применим только до последнего дня. К утру 8-го дня будет 7 м, днем достигнет 10 м.",
-      "Инженер: после каждой ночи высота растет на 1 м: 1, 2, 3, 4, 5, 6, 7. На 8-й день подъем с 7 до 10 м завершает задачу.",
-      "Критик: ответ 10 дней ошибочен, потому что учитывает ночной спуск после выхода. Корректный итог: 8 дней."
-    ].join("\n")
-  };
+  return [
+    {
+      temperature: 0,
+      answer: [
+        "API — это набор правил, по которым одна программа обращается к другой и получает от нее данные или действие.",
+        "Например, приложение погоды через API запрашивает прогноз у сервера.",
+        "Бытовая аналогия: API похож на меню в кафе — вы выбираете понятный пункт, а кухня выполняет заказ по своим внутренним правилам."
+      ].join(" ")
+    },
+    {
+      temperature: 0.7,
+      answer: [
+        "API — это способ для программ разговаривать друг с другом без знания всех внутренних деталей.",
+        "Если сайт просит банк проверить платеж или карту показать маршрут, это часто происходит через API.",
+        "В быту API похож на окно выдачи в библиотеке: вы называете, что нужно, а сотрудник приносит результат из системы, куда вы сами не заходите."
+      ].join(" ")
+    },
+    {
+      temperature: 1.2,
+      answer: [
+        "API — это как вежливый переводчик между программами: одна говорит, что ей нужно, другая возвращает результат в понятном формате.",
+        "Представьте домофон: вы нажимаете кнопку квартиры, система передает запрос, а человек внутри решает, открыть дверь или нет.",
+        "Так и приложение не лезет внутрь чужого сервиса, а обращается через заранее оговоренный вход."
+      ].join(" ")
+    }
+  ];
 }
 
 async function getAccessToken() {
@@ -91,7 +89,7 @@ async function getAccessToken() {
   return tokenData.access_token;
 }
 
-async function askGigaChat(accessToken, messages) {
+async function askGigaChat(accessToken, temperature) {
   let response;
 
   try {
@@ -104,7 +102,8 @@ async function askGigaChat(accessToken, messages) {
       },
       body: JSON.stringify({
         model,
-        messages
+        temperature,
+        messages: [{ role: "user", content: prompt }]
       })
     });
   } catch (error) {
@@ -124,66 +123,39 @@ async function askGigaChat(accessToken, messages) {
 
 async function runWithApi() {
   const accessToken = await getAccessToken();
+  const answers = [];
 
-  const direct = await askGigaChat(accessToken, [{ role: "user", content: task }]);
+  for (const temperature of temperatures) {
+    const answer = await askGigaChat(accessToken, temperature);
+    answers.push({ temperature, answer });
+  }
 
-  const stepByStep = await askGigaChat(accessToken, [
-    {
-      role: "user",
-      content: `${task}\n\nРешай пошагово.`
-    }
-  ]);
-
-  const generatedPrompt = await askGigaChat(accessToken, [
-    {
-      role: "user",
-      content: [
-        "Составь лучший промпт для решения этой логической задачи.",
-        "Промпт должен заставить модель учесть все условия и избежать типичной ошибки.",
-        "Верни только текст промпта.",
-        "",
-        `Задача: ${task}`
-      ].join("\n")
-    }
-  ]);
-
-  const promptBased = await askGigaChat(accessToken, [{ role: "user", content: generatedPrompt }]);
-
-  const experts = await askGigaChat(accessToken, [
-    {
-      role: "user",
-      content: [
-        `Задача: ${task}`,
-        "",
-        "Создай группу экспертов: аналитик, инженер, критик.",
-        "Пусть каждый эксперт решит задачу своим способом.",
-        "В конце дай общий вывод и финальный ответ."
-      ].join("\n")
-    }
-  ]);
-
-  return { direct, stepByStep, generatedPrompt, promptBased, experts };
+  return answers;
 }
 
 const answers = useMock ? buildMockAnswers() : await runWithApi();
 
-console.log("Задача:");
-console.log(task);
-console.log(`\nПроверяемый правильный ответ: ${correctAnswer}`);
+console.log("Запрос:");
+console.log(prompt);
 
-printSection("1. Прямой ответ без дополнительных инструкций", answers.direct);
-printSection('2. Инструкция "решай пошагово"', answers.stepByStep);
-printSection("3. Сначала модель составляет промпт", answers.generatedPrompt);
-printSection("3. Решение по промпту, составленному моделью", answers.promptBased);
-printSection("4. Группа экспертов", answers.experts);
+for (const { temperature, answer } of answers) {
+  printSection(`temperature = ${temperature}`, answer);
+}
 
 printSection(
   "Сравнение",
   [
-    "Прямой ответ может быть короче, но чаще рискует ошибиться в нюансе последнего дня.",
-    'Инструкция "решай пошагово" повышает шанс правильного расчета, потому что модель явно проверяет ход решения.',
-    "Промпт, составленный моделью, обычно лучше фиксирует важное условие: после выхода улитка уже не сползает.",
-    "Группа экспертов дает самую надежную проверку, потому что критик отдельно ищет типичную ошибку.",
-    `Наиболее точный способ для этой задачи: группа экспертов или пошаговое решение. Ожидаемый итог: ${correctAnswer}.`
+    "temperature = 0: обычно самый точный и предсказуемый ответ. Формулировки сухие, разнообразие минимальное.",
+    "temperature = 0.7: баланс точности и живости. Ответ остается по теме, но аналогии и стиль становятся менее шаблонными.",
+    "temperature = 1.2: больше креативности и разнообразия, но выше риск лишних деталей, неточностей или слишком свободной аналогии."
+  ].join("\n")
+);
+
+printSection(
+  "Для каких задач подходит",
+  [
+    "temperature = 0: фактические ответы, инструкции, классификация, извлечение данных, код, где важна повторяемость.",
+    "temperature = 0.7: объяснения, учебные примеры, тексты для пользователей, идеи с умеренной вариативностью.",
+    "temperature = 1.2: брейншторминг, креативные названия, необычные аналогии, черновики рекламных или художественных текстов."
   ].join("\n")
 );
