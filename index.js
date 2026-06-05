@@ -2,14 +2,32 @@ const args = process.argv.slice(2);
 const useMock = args.includes("--mock");
 const customPrompt = args.filter((arg) => arg !== "--mock").join(" ");
 const authKey = process.env.GIGACHAT_AUTH_KEY;
-const model = process.env.GIGACHAT_MODEL || "GigaChat-2";
 const scope = process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS";
 
 const prompt =
   customPrompt ||
-  "Объясни, что такое API, простыми словами и придумай одну бытовую аналогию. Ответь в 3-4 предложениях.";
+  "Объясни простыми словами, почему для пет-проекта с LLM API важно сравнивать слабую, среднюю и сильную модель. Ответь в 4-5 предложениях.";
 
-const temperatures = [0, 0.7, 1.2];
+const models = [
+  {
+    label: "слабая модель",
+    name: "GigaChat-2",
+    paidRubPer1000Tokens: 0.065,
+    description: "Lite: быстрая и легкая модель для простых повседневных задач"
+  },
+  {
+    label: "средняя модель",
+    name: "GigaChat-2-Pro",
+    paidRubPer1000Tokens: 0.5,
+    description: "Pro: усовершенствованная модель для ресурсоемких задач"
+  },
+  {
+    label: "сильная модель",
+    name: "GigaChat-2-Max",
+    paidRubPer1000Tokens: 0.65,
+    description: "Max: мощная модель для самых сложных и масштабных задач"
+  }
+];
 
 if (!useMock && !authKey) {
   console.error("Ошибка: задайте переменную окружения GIGACHAT_AUTH_KEY или запустите демо с --mock.");
@@ -20,34 +38,39 @@ if (!useMock && !authKey) {
 
 function printSection(title, text) {
   console.log(`\n=== ${title} ===`);
-  console.log(text.trim());
+  console.log(String(text).trim());
 }
 
-function buildMockAnswers() {
+function rubles(value) {
+  return `${value.toFixed(6)} ₽`;
+}
+
+function calculatePaidCost(totalTokens, rubPer1000Tokens) {
+  return (totalTokens / 1000) * rubPer1000Tokens;
+}
+
+function buildMockResults() {
   return [
     {
-      temperature: 0,
-      answer: [
-        "API — это набор правил, по которым одна программа обращается к другой и получает от нее данные или действие.",
-        "Например, приложение погоды через API запрашивает прогноз у сервера.",
-        "Бытовая аналогия: API похож на меню в кафе — вы выбираете понятный пункт, а кухня выполняет заказ по своим внутренним правилам."
-      ].join(" ")
+      ...models[0],
+      elapsedMs: 820,
+      usage: { prompt_tokens: 39, completion_tokens: 62, total_tokens: 101 },
+      answer:
+        "Сравнивать модели важно, потому что простая модель часто отвечает быстрее и дешевле. Для пет-проекта этого может быть достаточно, если задача простая. Более сильные модели нужны, когда требуется точность, сложное рассуждение или аккуратный стиль. Так можно не переплачивать за задачи, где хватает легкой модели."
     },
     {
-      temperature: 0.7,
-      answer: [
-        "API — это способ для программ разговаривать друг с другом без знания всех внутренних деталей.",
-        "Если сайт просит банк проверить платеж или карту показать маршрут, это часто происходит через API.",
-        "В быту API похож на окно выдачи в библиотеке: вы называете, что нужно, а сотрудник приносит результат из системы, куда вы сами не заходите."
-      ].join(" ")
+      ...models[1],
+      elapsedMs: 1420,
+      usage: { prompt_tokens: 39, completion_tokens: 82, total_tokens: 121 },
+      answer:
+        "Для пет-проекта сравнение моделей помогает найти баланс между качеством, скоростью и стоимостью. Слабая модель подходит для простых ответов и черновиков, средняя лучше справляется с объяснениями и структурой, а сильная полезна для сложной логики и более надежных выводов. Если проверять только одну модель, легко выбрать слишком дорогой или слишком слабый вариант. Поэтому тест на одном запросе показывает, где качество действительно оправдывает ресурсы."
     },
     {
-      temperature: 1.2,
-      answer: [
-        "API — это как вежливый переводчик между программами: одна говорит, что ей нужно, другая возвращает результат в понятном формате.",
-        "Представьте домофон: вы нажимаете кнопку квартиры, система передает запрос, а человек внутри решает, открыть дверь или нет.",
-        "Так и приложение не лезет внутрь чужого сервиса, а обращается через заранее оговоренный вход."
-      ].join(" ")
+      ...models[2],
+      elapsedMs: 2380,
+      usage: { prompt_tokens: 39, completion_tokens: 103, total_tokens: 142 },
+      answer:
+        "Сравнение слабой, средней и сильной модели позволяет понять, какая из них дает достаточное качество именно для вашего сценария. В пет-проекте это особенно важно: бюджет и лимиты обычно ограничены, поэтому сильную модель стоит использовать только там, где она заметно улучшает результат. Легкая модель часто выигрывает по скорости и цене, но может хуже держать контекст или упрощать рассуждения. Средняя модель обычно становится практичным компромиссом, а сильная нужна для задач с высокой ценой ошибки, сложной аналитикой или требованием к стабильному качеству."
     }
   ];
 }
@@ -89,8 +112,9 @@ async function getAccessToken() {
   return tokenData.access_token;
 }
 
-async function askGigaChat(accessToken, temperature) {
+async function askGigaChat(accessToken, modelConfig) {
   let response;
+  const startedAt = performance.now();
 
   try {
     response = await fetch("https://gigachat.devices.sberbank.ru/api/v1/chat/completions", {
@@ -101,8 +125,7 @@ async function askGigaChat(accessToken, temperature) {
         Authorization: `Bearer ${accessToken}`
       },
       body: JSON.stringify({
-        model,
-        temperature,
+        model: modelConfig.name,
         messages: [{ role: "user", content: prompt }]
       })
     });
@@ -111,51 +134,72 @@ async function askGigaChat(accessToken, temperature) {
     process.exit(1);
   }
 
+  const elapsedMs = Math.round(performance.now() - startedAt);
   const data = await response.json();
 
   if (!response.ok) {
-    console.error("Ошибка API:", data.message || data);
+    console.error(`Ошибка API для ${modelConfig.name}:`, data.message || data);
     process.exit(1);
   }
 
-  return data.choices?.[0]?.message?.content || JSON.stringify(data, null, 2);
+  return {
+    ...modelConfig,
+    elapsedMs,
+    usage: data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    answer: data.choices?.[0]?.message?.content || JSON.stringify(data, null, 2)
+  };
 }
 
 async function runWithApi() {
   const accessToken = await getAccessToken();
-  const answers = [];
+  const results = [];
 
-  for (const temperature of temperatures) {
-    const answer = await askGigaChat(accessToken, temperature);
-    answers.push({ temperature, answer });
+  for (const modelConfig of models) {
+    results.push(await askGigaChat(accessToken, modelConfig));
   }
 
-  return answers;
+  return results;
 }
 
-const answers = useMock ? buildMockAnswers() : await runWithApi();
+function renderResult(result) {
+  const paidCost = calculatePaidCost(result.usage.total_tokens, result.paidRubPer1000Tokens);
+
+  return [
+    `Модель: ${result.name}`,
+    `Описание: ${result.description}`,
+    `Время ответа: ${result.elapsedMs} мс`,
+    `Токены: prompt=${result.usage.prompt_tokens}, completion=${result.usage.completion_tokens}, total=${result.usage.total_tokens}`,
+    `Стоимость: 0 ₽ в рамках freemium-лимита; платная оценка: ${rubles(paidCost)} при ${result.paidRubPer1000Tokens} ₽ / 1000 токенов`,
+    "",
+    result.answer
+  ].join("\n");
+}
+
+const results = useMock ? buildMockResults() : await runWithApi();
 
 console.log("Запрос:");
 console.log(prompt);
 
-for (const { temperature, answer } of answers) {
-  printSection(`temperature = ${temperature}`, answer);
+for (const result of results) {
+  printSection(`${result.label}: ${result.name}`, renderResult(result));
 }
 
 printSection(
   "Сравнение",
   [
-    "temperature = 0: обычно самый точный и предсказуемый ответ. Формулировки сухие, разнообразие минимальное.",
-    "temperature = 0.7: баланс точности и живости. Ответ остается по теме, но аналогии и стиль становятся менее шаблонными.",
-    "temperature = 1.2: больше креативности и разнообразия, но выше риск лишних деталей, неточностей или слишком свободной аналогии."
+    "Качество: слабая модель обычно достаточна для простых объяснений; средняя дает более полную структуру; сильная лучше раскрывает нюансы и риски.",
+    "Скорость: слабая модель чаще быстрее, сильная обычно медленнее из-за большей ресурсоемкости.",
+    "Ресурсоемкость: сильная модель чаще генерирует больше токенов и дороже в платном режиме; слабая экономнее.",
+    "Практический вывод: начинайте с GigaChat-2, переходите на GigaChat-2-Pro для устойчивого качества, используйте GigaChat-2-Max для сложной аналитики и задач с высокой ценой ошибки."
   ].join("\n")
 );
 
 printSection(
-  "Для каких задач подходит",
+  "Ссылки",
   [
-    "temperature = 0: фактические ответы, инструкции, классификация, извлечение данных, код, где важна повторяемость.",
-    "temperature = 0.7: объяснения, учебные примеры, тексты для пользователей, идеи с умеренной вариативностью.",
-    "temperature = 1.2: брейншторминг, креативные названия, необычные аналогии, черновики рекламных или художественных текстов."
+    "Модели GigaChat: https://developers.sber.ru/docs/ru/gigachat/models",
+    "Выбор модели: https://developers.sber.ru/docs/ru/gigachat/guides/selecting-a-model",
+    "Подсчет токенов и usage: https://developers.sber.ru/docs/ru/gigachat/guides/counting-tokens",
+    "Тарифы для физлиц: https://developers.sber.ru/docs/ru/gigachat/tariffs/individual-tariffs"
   ].join("\n")
 );
