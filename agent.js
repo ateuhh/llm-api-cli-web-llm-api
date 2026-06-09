@@ -1,15 +1,20 @@
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+
 export class GigaChatAgent {
   constructor({
     authKey,
     model = "GigaChat-2",
     scope = "GIGACHAT_API_PERS",
     mock = false,
+    historyPath = "./chat-history.json",
     systemPrompt = "Ты полезный ассистент. Учитывай всю историю диалога и отвечай на русском языке."
   } = {}) {
     this.authKey = authKey;
     this.model = model;
     this.scope = scope;
     this.mock = mock;
+    this.historyPath = historyPath;
     this.accessToken = null;
     this.messages = [{ role: "system", content: systemPrompt }];
   }
@@ -18,9 +23,42 @@ export class GigaChatAgent {
     return this.messages.map((message) => ({ ...message }));
   }
 
-  clearHistory() {
+  async loadHistory() {
+    try {
+      const rawHistory = await readFile(this.historyPath, "utf8");
+      const savedMessages = JSON.parse(rawHistory);
+
+      if (!Array.isArray(savedMessages) || !savedMessages.every(this.isValidMessage)) {
+        throw new Error("неверный формат messages");
+      }
+
+      this.messages = savedMessages;
+      return this.history;
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        await this.saveHistory();
+        return this.history;
+      }
+
+      if (error instanceof SyntaxError || error.message === "неверный формат messages") {
+        throw new Error(`Не удалось загрузить ${this.historyPath}: поврежден JSON.`);
+      }
+
+      throw error;
+    }
+  }
+
+  async saveHistory() {
+    const temporaryPath = `${this.historyPath}.tmp`;
+    await mkdir(dirname(this.historyPath), { recursive: true });
+    await writeFile(temporaryPath, `${JSON.stringify(this.messages, null, 2)}\n`, "utf8");
+    await rename(temporaryPath, this.historyPath);
+  }
+
+  async clearHistory() {
     const systemMessage = this.messages.find((message) => message.role === "system");
     this.messages = systemMessage ? [{ ...systemMessage }] : [];
+    await this.saveHistory();
   }
 
   async chat(userInput) {
@@ -35,11 +73,24 @@ export class GigaChatAgent {
     try {
       const answer = this.mock ? this.createMockReply(content) : await this.requestCompletion();
       this.messages.push({ role: "assistant", content: answer });
+      await this.saveHistory();
       return answer;
     } catch (error) {
-      this.messages.pop();
+      if (this.messages.at(-1)?.role === "user") {
+        this.messages.pop();
+      } else {
+        this.messages.splice(-2);
+      }
       throw error;
     }
+  }
+
+  isValidMessage(message) {
+    return (
+      message &&
+      ["system", "user", "assistant"].includes(message.role) &&
+      typeof message.content === "string"
+    );
   }
 
   async requestCompletion() {

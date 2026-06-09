@@ -8,6 +8,7 @@ const agent = new GigaChatAgent({
   authKey: process.env.GIGACHAT_AUTH_KEY,
   model: process.env.GIGACHAT_MODEL || "GigaChat-2",
   scope: process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS",
+  historyPath: process.env.CHAT_HISTORY_PATH || "./chat-history.json",
   mock: useMock
 });
 
@@ -17,9 +18,17 @@ if (!useMock && !process.env.GIGACHAT_AUTH_KEY) {
   process.exit(1);
 }
 
+try {
+  await agent.loadHistory();
+} catch (error) {
+  console.error(`Ошибка загрузки истории: ${error.message}`);
+  process.exit(1);
+}
+
 const cli = createInterface({ input, output });
 
 console.log(`GigaChat Agent запущен${useMock ? " в mock-режиме" : ""}.`);
+console.log(`История загружена: ${agent.history.filter((message) => message.role !== "system").length} сообщений.`);
 console.log("Команды: /history, /clear, /exit");
 output.write("\nВы: ");
 
@@ -31,8 +40,12 @@ for await (const userInput of cli) {
   }
 
   if (command === "/clear") {
-    agent.clearHistory();
-    console.log("История очищена.");
+    try {
+      await agent.clearHistory();
+      console.log("История очищена и сохранена.");
+    } catch (error) {
+      console.error(`Ошибка сохранения истории: ${error.message}`);
+    }
     output.write("\nВы: ");
     continue;
   }
