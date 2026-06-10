@@ -9,6 +9,9 @@ const agent = new GigaChatAgent({
   model: process.env.GIGACHAT_MODEL || "GigaChat-2",
   scope: process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS",
   historyPath: process.env.CHAT_HISTORY_PATH || "./chat-history.json",
+  contextWindow: Number(process.env.GIGACHAT_CONTEXT_WINDOW || 128000),
+  maxCompletionTokens: Number(process.env.GIGACHAT_MAX_COMPLETION_TOKENS || 512),
+  rubPerMillionTokens: Number(process.env.GIGACHAT_RUB_PER_MILLION_TOKENS || 65),
   mock: useMock
 });
 
@@ -29,7 +32,7 @@ const cli = createInterface({ input, output });
 
 console.log(`GigaChat Agent запущен${useMock ? " в mock-режиме" : ""}.`);
 console.log(`История загружена: ${agent.history.filter((message) => message.role !== "system").length} сообщений.`);
-console.log("Команды: /history, /clear, /exit");
+console.log("Команды: /history, /tokens, /clear, /exit");
 output.write("\nВы: ");
 
 for await (const userInput of cli) {
@@ -66,9 +69,35 @@ for await (const userInput of cli) {
     continue;
   }
 
+  if (command === "/tokens") {
+    const totals = agent.usageTotals;
+    console.log(
+      [
+        `Входные токены всех запросов: ${totals.promptTokens}`,
+        `Токены всех ответов: ${totals.completionTokens}`,
+        `Всего тарифицируемых токенов: ${totals.billedTokens}`,
+        `Оценочная стоимость: ${totals.estimatedCostRub.toFixed(6)} ₽`
+      ].join("\n")
+    );
+    output.write("\nВы: ");
+    continue;
+  }
+
   try {
     const answer = await agent.chat(userInput);
     console.log(`\nАгент: ${answer}`);
+    const metrics = agent.lastMetrics;
+    console.log(
+      [
+        "\nТокены:",
+        `  текущий запрос: ${metrics.currentRequestTokens}`,
+        `  вся история запроса: ${metrics.historyTokens}`,
+        `  ответ модели: ${metrics.answerTokens}`,
+        `  заполнение контекста: ${metrics.contextUsagePercent.toFixed(2)}%`,
+        `  стоимость вызова: ${metrics.estimatedCostRub.toFixed(6)} ₽`,
+        `  накопленная стоимость: ${agent.usageTotals.estimatedCostRub.toFixed(6)} ₽`
+      ].join("\n")
+    );
   } catch (error) {
     console.error(`\nОшибка: ${error.message}`);
   }
