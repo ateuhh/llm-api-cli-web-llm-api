@@ -12,6 +12,9 @@ const agent = new GigaChatAgent({
   contextWindow: Number(process.env.GIGACHAT_CONTEXT_WINDOW || 128000),
   maxCompletionTokens: Number(process.env.GIGACHAT_MAX_COMPLETION_TOKENS || 512),
   rubPerMillionTokens: Number(process.env.GIGACHAT_RUB_PER_MILLION_TOKENS || 65),
+  compressionEnabled: process.env.CHAT_COMPRESSION !== "false",
+  recentMessageLimit: Number(process.env.CHAT_RECENT_MESSAGES || 10),
+  summaryBatchSize: Number(process.env.CHAT_SUMMARY_BATCH_SIZE || 10),
   mock: useMock
 });
 
@@ -32,7 +35,8 @@ const cli = createInterface({ input, output });
 
 console.log(`GigaChat Agent запущен${useMock ? " в mock-режиме" : ""}.`);
 console.log(`История загружена: ${agent.history.filter((message) => message.role !== "system").length} сообщений.`);
-console.log("Команды: /history, /tokens, /clear, /exit");
+console.log(`Компрессия: ${agent.compressionEnabled ? "включена" : "выключена"}.`);
+console.log("Команды: /history, /summary, /tokens, /clear, /exit");
 output.write("\nВы: ");
 
 for await (const userInput of cli) {
@@ -76,9 +80,17 @@ for await (const userInput of cli) {
         `Входные токены всех запросов: ${totals.promptTokens}`,
         `Токены всех ответов: ${totals.completionTokens}`,
         `Всего тарифицируемых токенов: ${totals.billedTokens}`,
-        `Оценочная стоимость: ${totals.estimatedCostRub.toFixed(6)} ₽`
+        `Оценочная стоимость: ${totals.estimatedCostRub.toFixed(6)} ₽`,
+        `Запусков компрессии: ${agent.compressionStats.runs}`,
+        `Сэкономлено токенов контекста: ${agent.compressionStats.savedTokens}`
       ].join("\n")
     );
+    output.write("\nВы: ");
+    continue;
+  }
+
+  if (command === "/summary") {
+    console.log(agent.summary || "Summary пока не создан.");
     output.write("\nВы: ");
     continue;
   }
@@ -95,7 +107,12 @@ for await (const userInput of cli) {
         `  ответ модели: ${metrics.answerTokens}`,
         `  заполнение контекста: ${metrics.contextUsagePercent.toFixed(2)}%`,
         `  стоимость вызова: ${metrics.estimatedCostRub.toFixed(6)} ₽`,
-        `  накопленная стоимость: ${agent.usageTotals.estimatedCostRub.toFixed(6)} ₽`
+        `  накопленная стоимость: ${agent.usageTotals.estimatedCostRub.toFixed(6)} ₽`,
+        `  компрессий: ${metrics.compressionRuns}`,
+        `  сэкономлено токенов контекста: ${metrics.compressionSavedTokens}`,
+        metrics.compressedThisTurn
+          ? `  это сжатие: ${metrics.tokensBeforeCompression} -> ${metrics.tokensAfterCompression}`
+          : "  на этом ходе сжатие не требовалось"
       ].join("\n")
     );
   } catch (error) {

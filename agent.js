@@ -11,6 +11,9 @@ export class GigaChatAgent {
     contextWindow = 128000,
     maxCompletionTokens = 512,
     rubPerMillionTokens = 65,
+    compressionEnabled = true,
+    recentMessageLimit = 10,
+    summaryBatchSize = 10,
     systemPrompt = "Ты полезный ассистент. Учитывай всю историю диалога и отвечай на русском языке."
   } = {}) {
     this.authKey = authKey;
@@ -21,8 +24,18 @@ export class GigaChatAgent {
     this.contextWindow = contextWindow;
     this.maxCompletionTokens = maxCompletionTokens;
     this.rubPerMillionTokens = rubPerMillionTokens;
+    this.compressionEnabled = compressionEnabled;
+    this.recentMessageLimit = recentMessageLimit;
+    this.summaryBatchSize = summaryBatchSize;
     this.accessToken = null;
     this.messages = [{ role: "system", content: systemPrompt }];
+    this.summary = "";
+    this.compressionStats = {
+      runs: 0,
+      originalTokens: 0,
+      summaryTokens: 0,
+      savedTokens: 0
+    };
     this.usageTotals = {
       promptTokens: 0,
       completionTokens: 0,
@@ -36,6 +49,20 @@ export class GigaChatAgent {
     return this.messages.map((message) => ({ ...message }));
   }
 
+  get contextMessages() {
+    const [systemMessage, ...recentMessages] = this.messages;
+    const context = systemMessage ? [{ ...systemMessage }] : [];
+
+    if (this.summary) {
+      context.push({
+        role: "system",
+        content: `Краткое содержание предыдущей части диалога:\n${this.summary}`
+      });
+    }
+
+    return [...context, ...recentMessages.map((message) => ({ ...message }))];
+  }
+
   async loadHistory() {
     try {
       const rawHistory = await readFile(this.historyPath, "utf8");
@@ -47,6 +74,13 @@ export class GigaChatAgent {
       }
 
       this.messages = savedMessages;
+      if (!Array.isArray(savedData)) {
+        this.summary = typeof savedData.summary === "string" ? savedData.summary : "";
+        this.compressionStats = {
+          ...this.compressionStats,
+          ...(savedData.compressionStats || {})
+        };
+      }
       if (!Array.isArray(savedData) && savedData.usageTotals) {
         this.usageTotals = { ...this.usageTotals, ...savedData.usageTotals };
       }
@@ -70,6 +104,8 @@ export class GigaChatAgent {
     await mkdir(dirname(this.historyPath), { recursive: true });
     const savedData = {
       messages: this.messages,
+      summary: this.summary,
+      compressionStats: this.compressionStats,
       usageTotals: this.usageTotals
     };
     await writeFile(temporaryPath, `${JSON.stringify(savedData, null, 2)}\n`, "utf8");
@@ -79,6 +115,13 @@ export class GigaChatAgent {
   async clearHistory() {
     const systemMessage = this.messages.find((message) => message.role === "system");
     this.messages = systemMessage ? [{ ...systemMessage }] : [];
+    this.summary = "";
+    this.compressionStats = {
+      runs: 0,
+      originalTokens: 0,
+      summaryTokens: 0,
+      savedTokens: 0
+    };
     this.usageTotals = {
       promptTokens: 0,
       completionTokens: 0,
@@ -99,8 +142,10 @@ export class GigaChatAgent {
     this.messages.push({ role: "user", content });
 
     try {
+      const compressionMetrics = await this.compressHistoryIfNeeded();
+      const requestMessages = this.contextMessages;
       const currentRequestTokens = await this.countTokens([content]);
-      const historyTokens = await this.countTokens(this.messages.map((message) => message.content));
+      const historyTokens = await this.countTokens(requestMessages.map((message) => message.content));
 
       if (historyTokens + this.maxCompletionTokens > this.contextWindow) {
         throw new Error(
@@ -113,8 +158,8 @@ export class GigaChatAgent {
       }
 
       const completion = this.mock
-        ? this.createMockCompletion(content, historyTokens)
-        : await this.requestCompletion();
+        ? this.createMockCompletion(content, historyTokens, requestMessages)
+        : await this.requestCompletion(requestMessages);
       const answer = completion.answer;
       this.messages.push({ role: "assistant", content: answer });
       const answerTokens =
@@ -130,7 +175,12 @@ export class GigaChatAgent {
         billedTokens,
         estimatedCostRub,
         contextWindow: this.contextWindow,
-        contextUsagePercent: (historyTokens / this.contextWindow) * 100
+        contextUsagePercent: (historyTokens / this.contextWindow) * 100,
+        compressionRuns: this.compressionStats.runs,
+        compressionSavedTokens: this.compressionStats.savedTokens,
+        compressedThisTurn: compressionMetrics.compressed,
+        tokensBeforeCompression: compressionMetrics.beforeTokens,
+        tokensAfterCompression: compressionMetrics.afterTokens
       };
       this.usageTotals.promptTokens += promptTokens;
       this.usageTotals.completionTokens += answerTokens;
@@ -146,6 +196,103 @@ export class GigaChatAgent {
       }
       throw error;
     }
+  }
+
+  async compressHistoryIfNeeded() {
+    const defaultMetrics = {
+      compressed: false,
+      beforeTokens: 0,
+      afterTokens: 0
+    };
+
+    if (!this.compressionEnabled) {
+      return defaultMetrics;
+    }
+
+    let conversation = this.messages.slice(1);
+    let oldMessageCount = conversation.length - this.recentMessageLimit;
+
+    if (oldMessageCount < this.summaryBatchSize) {
+      return defaultMetrics;
+    }
+
+    const beforeTokens = await this.countTokens(
+      this.contextMessages.map((message) => message.content)
+    );
+
+    while (oldMessageCount >= this.summaryBatchSize) {
+      const batch = conversation.slice(0, this.summaryBatchSize);
+      const summaryResult = await this.summarizeMessages(batch);
+      this.summary = summaryResult.summary;
+      conversation = conversation.slice(this.summaryBatchSize);
+      this.messages = [this.messages[0], ...conversation];
+
+      const usage = summaryResult.usage;
+      if (usage) {
+        const billedTokens = usage.total_tokens || 0;
+        this.usageTotals.promptTokens += usage.prompt_tokens || 0;
+        this.usageTotals.completionTokens += usage.completion_tokens || 0;
+        this.usageTotals.billedTokens += billedTokens;
+        this.usageTotals.estimatedCostRub += this.calculateCost(billedTokens);
+      }
+
+      this.compressionStats.runs += 1;
+      oldMessageCount = conversation.length - this.recentMessageLimit;
+    }
+
+    const afterTokens = await this.countTokens(
+      this.contextMessages.map((message) => message.content)
+    );
+    this.compressionStats.originalTokens += beforeTokens;
+    this.compressionStats.summaryTokens += afterTokens;
+    this.compressionStats.savedTokens += Math.max(0, beforeTokens - afterTokens);
+
+    return {
+      compressed: true,
+      beforeTokens,
+      afterTokens
+    };
+  }
+
+  async summarizeMessages(batch) {
+    const transcript = batch
+      .map((message) => `${message.role === "user" ? "Пользователь" : "Ассистент"}: ${message.content}`)
+      .join("\n");
+    const summaryPrompt = [
+      "Обнови краткое содержание диалога.",
+      "Сохрани имена, числа, решения, предпочтения, ограничения и незавершенные задачи.",
+      "Не добавляй фактов, которых не было. Верни только краткое содержание.",
+      this.summary ? `Предыдущее summary:\n${this.summary}` : "",
+      `Новые сообщения:\n${transcript}`
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    if (this.mock) {
+      const summary = this.createMockSummary(summaryPrompt);
+      const promptTokens = await this.countTokens([summaryPrompt]);
+      const completionTokens = await this.countTokens([summary]);
+      return {
+        summary,
+        usage: {
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: promptTokens + completionTokens
+        }
+      };
+    }
+
+    const completion = await this.requestCompletion(
+      [
+        {
+          role: "system",
+          content: "Ты сжимаешь историю чата для последующего продолжения диалога."
+        },
+        { role: "user", content: summaryPrompt }
+      ],
+      300
+    );
+    return { summary: completion.answer, usage: completion.usage };
   }
 
   calculateCost(tokens) {
@@ -194,7 +341,7 @@ export class GigaChatAgent {
     );
   }
 
-  async requestCompletion() {
+  async requestCompletion(messages, maxTokens = this.maxCompletionTokens) {
     if (!this.authKey) {
       throw new Error("Не задан GIGACHAT_AUTH_KEY.");
     }
@@ -212,7 +359,8 @@ export class GigaChatAgent {
       },
       body: JSON.stringify({
         model: this.model,
-        messages: this.messages
+        messages,
+        max_tokens: maxTokens
       })
     });
 
@@ -264,11 +412,32 @@ export class GigaChatAgent {
     return data.access_token;
   }
 
-  createMockCompletion(userInput, historyTokens) {
-    const previousUserMessages = this.messages
+  createMockCompletion(userInput, historyTokens, requestMessages) {
+    const previousUserMessages = requestMessages
       .filter((message) => message.role === "user")
       .slice(0, -1)
       .map((message) => message.content);
+    const contextText = requestMessages.map((message) => message.content).join("\n");
+
+    if (/как называется проект|кодовое слово|база данных/i.test(userInput)) {
+      const project = contextText.match(/проект(?: называется|:)?\s+["«]?([A-Za-zА-Яа-яЁё-]+)/i)?.[1];
+      const codeWord = contextText.match(/кодовое слово(?: проекта)?(?: —|:)?\s+["«]?([A-Za-zА-Яа-яЁё-]+)/i)?.[1];
+      const database = contextText.match(/(?:база данных|бд)(?: —|:)?\s+["«]?([A-Za-zА-Яа-яЁё-]+)/i)?.[1];
+      const answer = [
+        `Проект: ${project || "не найдено"}.`,
+        `Кодовое слово: ${codeWord || "не найдено"}.`,
+        `База данных: ${database || "не найдено"}.`
+      ].join(" ");
+      const answerTokens = Math.ceil(answer.length / 3.5);
+      return {
+        answer,
+        usage: {
+          prompt_tokens: historyTokens,
+          completion_tokens: answerTokens,
+          total_tokens: historyTokens + answerTokens
+        }
+      };
+    }
 
     if (previousUserMessages.length === 0) {
       const answer = `Я запомнил ваш первый запрос: "${userInput}". Задайте уточняющий вопрос, и я использую этот контекст.`;
@@ -298,5 +467,37 @@ export class GigaChatAgent {
         total_tokens: historyTokens + answerTokens
       }
     };
+  }
+
+  createMockSummary(summaryPrompt) {
+    const facts = [];
+    const project = summaryPrompt.match(/проект(?: называется|:)?\s+["«]?([A-Za-zА-Яа-яЁё-]+)/i)?.[1];
+    const codeWord = summaryPrompt.match(
+      /кодовое слово(?: проекта)?(?: —|:)?\s+["«]?([A-Za-zА-Яа-яЁё-]+)/i
+    )?.[1];
+    const database = summaryPrompt.match(
+      /(?:база данных|бд)(?: —|:)?\s+["«]?([A-Za-zА-Яа-яЁё-]+)/i
+    )?.[1];
+
+    if (project) {
+      facts.push(`Проект: ${project}.`);
+    }
+    if (codeWord) {
+      facts.push(`Кодовое слово: ${codeWord}.`);
+    }
+    if (database) {
+      facts.push(`База данных: ${database}.`);
+    }
+
+    if (facts.length > 0) {
+      return facts.join(" ");
+    }
+
+    const userLines = summaryPrompt
+      .split("\n")
+      .filter((line) => line.startsWith("Пользователь:"))
+      .slice(-3)
+      .map((line) => line.replace("Пользователь:", "").trim());
+    return `Ключевой контекст: ${userLines.join(" | ").slice(0, 500)}`;
   }
 }

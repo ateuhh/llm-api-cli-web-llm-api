@@ -5,6 +5,7 @@
   "scripts": {
     "chat": "node index.js",
     "ask": "node index.js",
-    "token-demo": "node token-demo.js"
+    "token-demo": "node token-demo.js",
+    "compression-demo": "node compression-demo.js"
   }
 }
