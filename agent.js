@@ -327,7 +327,7 @@ export class GigaChatAgent {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || `Ошибка подсчета токенов: ${response.status}`);
+      throw new Error(this.formatApiError("Ошибка подсчета токенов", response, data));
     }
 
     return data.reduce((sum, item) => sum + (item.tokens ?? item.tokens_count ?? 0), 0);
@@ -367,7 +367,7 @@ export class GigaChatAgent {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || `Ошибка GigaChat API: ${response.status}`);
+      throw new Error(this.formatApiError("Ошибка GigaChat API", response, data));
     }
 
     const answer = data.choices?.[0]?.message?.content;
@@ -377,6 +377,14 @@ export class GigaChatAgent {
     }
 
     return { answer, usage: data.usage };
+  }
+
+  formatApiError(prefix, response, data) {
+    const details =
+      data?.message ||
+      data?.error?.message ||
+      (typeof data === "string" ? data : JSON.stringify(data));
+    return `${prefix}: HTTP ${response.status}${details ? ` — ${details}` : ""}`;
   }
 
   async requestAccessToken() {
@@ -406,7 +414,7 @@ export class GigaChatAgent {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || `Ошибка авторизации GigaChat: ${response.status}`);
+      throw new Error(this.formatApiError("Ошибка авторизации GigaChat", response, data));
     }
 
     return data.access_token;

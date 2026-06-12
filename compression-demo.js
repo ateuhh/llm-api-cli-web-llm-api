@@ -46,10 +46,20 @@ async function runDialogue(compressionEnabled) {
   const agent = createAgent(compressionEnabled);
   await agent.loadHistory();
 
-  for (const message of dialogue) {
+  for (const [index, message] of dialogue.entries()) {
+    if (useRealApi) {
+      console.log(
+        `[${compressionEnabled ? "со сжатием" : "без сжатия"}] запрос ${index + 1}/${dialogue.length + 1}`
+      );
+    }
     await agent.chat(message);
   }
 
+  if (useRealApi) {
+    console.log(
+      `[${compressionEnabled ? "со сжатием" : "без сжатия"}] контрольный запрос ${dialogue.length + 1}/${dialogue.length + 1}`
+    );
+  }
   const answer = await agent.chat(finalQuestion);
   return {
     answer,
@@ -63,8 +73,22 @@ async function runDialogue(compressionEnabled) {
   };
 }
 
-const withoutCompression = await runDialogue(false);
-const withCompression = await runDialogue(true);
+let withoutCompression;
+let withCompression;
+
+try {
+  withoutCompression = await runDialogue(false);
+  withCompression = await runDialogue(true);
+} catch (error) {
+  console.error(`\nДемонстрация остановлена: ${error.message}`);
+  console.error(
+    "Команда /exit здесь не используется: compression-demo запускается автоматически и завершается сам."
+  );
+  console.error(
+    "Для интерактивного чата с командой /exit используйте: npm run chat:secure"
+  );
+  process.exit(1);
+}
 const savedContextTokens = withoutCompression.contextTokens - withCompression.contextTokens;
 const savedPercent = (savedContextTokens / withoutCompression.contextTokens) * 100;
 
