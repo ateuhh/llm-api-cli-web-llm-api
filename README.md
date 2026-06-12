@@ -129,6 +129,32 @@ export GIGACHAT_AUTH_KEY="ваш_ключ_авторизации"
 NODE_EXTRA_CA_CERTS="$HOME/Downloads/russian_trusted_root_ca_pem.crt" npm run chat
 ```
 
+Если сертификат установлен в папку проекта `certs`, используйте готовую команду:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ_авторизации"
+npm run chat:secure
+```
+
+Установка сертификата в папку проекта:
+
+```bash
+mkdir -p certs
+curl -k --fail --location \
+  https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt \
+  --output certs/russian_trusted_root_ca_pem.crt
+```
+
+Проверка сертификата:
+
+```bash
+openssl x509 \
+  -in certs/russian_trusted_root_ca_pem.crt \
+  -noout -subject -dates -fingerprint -sha256
+```
+
+Сертификат публичный, но локальный файл исключен из Git. После нового клонирования репозитория команду установки нужно выполнить повторно.
+
 По умолчанию используется `GigaChat-2`. Другую модель можно задать через переменную:
 
 ```bash
