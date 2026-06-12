@@ -51,14 +51,14 @@ export class GigaChatAgent {
 
   get contextMessages() {
     const [systemMessage, ...recentMessages] = this.messages;
-    const context = systemMessage ? [{ ...systemMessage }] : [];
-
-    if (this.summary) {
-      context.push({
-        role: "system",
-        content: `Краткое содержание предыдущей части диалога:\n${this.summary}`
-      });
-    }
+    const summaryBlock = this.summary
+      ? `\n\nКраткое содержание предыдущей части диалога:\n${this.summary}`
+      : "";
+    const context = systemMessage
+      ? [{ ...systemMessage, content: `${systemMessage.content}${summaryBlock}` }]
+      : summaryBlock
+        ? [{ role: "system", content: summaryBlock.trim() }]
+        : [];
 
     return [...context, ...recentMessages.map((message) => ({ ...message }))];
   }

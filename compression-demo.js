@@ -1,6 +1,9 @@
 import { GigaChatAgent } from "./agent.js";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 
 const useRealApi = process.argv.includes("--real");
+const skipConfirmation = process.argv.includes("--yes");
 const facts = ["Atlas", "Маяк", "PostgreSQL"];
 const dialogue = [
   "Проект называется Atlas. Кодовое слово проекта: Маяк. База данных: PostgreSQL. Запомни эти факты.",
@@ -36,6 +39,24 @@ function createAgent(compressionEnabled) {
 if (useRealApi && !process.env.GIGACHAT_AUTH_KEY) {
   console.error("Для --real задайте GIGACHAT_AUTH_KEY.");
   process.exit(1);
+}
+
+if (useRealApi && !skipConfirmation) {
+  console.log("ВНИМАНИЕ: это автоматическая, не интерактивная демонстрация.");
+  console.log("Она отправит в GigaChat:");
+  console.log("- 26 основных запросов к модели;");
+  console.log("- до 3 дополнительных запросов для создания summary;");
+  console.log("- отдельные HTTP-запросы для подсчета токенов.");
+  console.log("Запросы расходуют API-квоту. Остановить выполнение можно через Ctrl+C.");
+
+  const cli = createInterface({ input, output });
+  const confirmation = await cli.question('Введите "ДА", чтобы начать реальные запросы: ');
+  cli.close();
+
+  if (confirmation.trim() !== "ДА") {
+    console.log("Демонстрация отменена. Ни одного запроса к GigaChat не отправлено.");
+    process.exit(0);
+  }
 }
 
 function qualityScore(answer) {
