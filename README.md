@@ -317,3 +317,107 @@ Summarization тоже использует токены, поэтому на к
 - Подсчет токенов: https://developers.sber.ru/docs/ru/gigachat/guides/counting-tokens
 - Метод `/tokens/count`: https://developers.sber.ru/docs/ru/gigachat/api/reference/rest/post-tokens-count
 - Тарифы: https://developers.sber.ru/docs/ru/gigachat/tariffs/individual-tariffs
+
+## Стратегии контекста без summary
+
+В [context-strategy-agent.js](./context-strategy-agent.js) реализован отдельный агент с переключателем:
+
+- `sliding` — хранит только последние N сообщений, остальные удаляет;
+- `facts` — хранит последние N сообщений и отдельный объект `facts`;
+- `branching` — сохраняет checkpoint и независимые ветки диалога.
+
+Для этого режима summary не используется.
+
+### Автоматическое сравнение
+
+Без API:
+
+```bash
+npm run strategy-demo
+```
+
+Реальное сравнение через GigaChat:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ_авторизации"
+npm run strategy-demo:secure
+```
+
+Перед реальным тестом программа предупредит примерно о 40 запросах и потребует ввести `ДА`. До подтверждения запросы не отправляются.
+
+Один и тот же сценарий сбора ТЗ содержит 12 сообщений и 6 проверяемых фактов:
+
+- цель;
+- бюджет;
+- срок;
+- платформа;
+- база данных;
+- авторизация.
+
+Ожидаемое поведение:
+
+```text
+Sliding Window: ранние факты теряются, но контекст минимальный.
+Sticky Facts: факты сохраняются, расход токенов умеренный.
+Branching: факты сохраняются в двух независимых вариантах, но расход максимальный.
+```
+
+### Интерактивный Sliding Window
+
+```bash
+CONTEXT_WINDOW_MESSAGES=6 \
+npm run strategy-chat:secure -- --strategy=sliding
+```
+
+После каждого ответа в памяти остаются только последние 6 сообщений.
+
+### Интерактивный Sticky Facts
+
+```bash
+CONTEXT_WINDOW_MESSAGES=6 \
+npm run strategy-chat:secure -- --strategy=facts
+```
+
+Вводите важные данные в формате:
+
+```text
+Цель: сервис управления задачами.
+Бюджет: 300 000 рублей.
+Срок: 3 месяца.
+Платформа: веб-приложение.
+База данных: PostgreSQL.
+Авторизация: JWT.
+```
+
+Команда `/facts` показывает отдельную key-value память. В API отправляются `facts + последние N сообщений`.
+
+### Интерактивный Branching
+
+```bash
+npm run strategy-chat:secure -- --strategy=branching
+```
+
+Пример:
+
+```text
+Цель: разработать сервис управления задачами.
+/checkpoint base
+/branch web base
+/branch mobile base
+/switch web
+Для web используем таблицы и боковое меню.
+/switch mobile
+Для mobile используем нижние вкладки и push-уведомления.
+/state
+```
+
+Ветки `web` и `mobile` создаются из одного checkpoint и продолжаются независимо.
+
+Команды:
+
+- `/facts` — показать key-value память;
+- `/state` — показать стратегию, ветки и сообщения;
+- `/checkpoint NAME` — сохранить checkpoint;
+- `/branch NAME CHECKPOINT` — создать ветку;
+- `/switch NAME` — переключить активную ветку;
+- `/exit` — завершить интерактивный чат.

@@ -8,6 +8,10 @@
     "ask": "node index.js",
     "token-demo": "node token-demo.js",
     "compression-demo": "node compression-demo.js",
-    "compression-demo:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node compression-demo.js --real"
+    "compression-demo:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node compression-demo.js --real",
+    "strategy-chat": "node strategy-cli.js",
+    "strategy-chat:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node strategy-cli.js",
+    "strategy-demo": "node strategy-demo.js",
+    "strategy-demo:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node strategy-demo.js --real"
   }
 }
