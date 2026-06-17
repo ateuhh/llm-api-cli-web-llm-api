@@ -16,6 +16,9 @@
     "memory-chat": "node memory-cli.js",
     "memory-chat:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node memory-cli.js",
     "memory-demo": "node memory-demo.js",
-    "personalization-demo": "node personalization-demo.js"
+    "personalization-demo": "node personalization-demo.js",
+    "task-chat": "node task-state-cli.js",
+    "task-chat:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node task-state-cli.js",
+    "task-demo": "node task-state-demo.js"
   }
 }

@@ -5,5 +5,7 @@ chat-history.json
 chat-history.json.tmp
 memory-layers.json
 memory-layers.json.tmp
+task-state.json
+task-state.json.tmp
 certs/*.crt
 certs/*.pem
