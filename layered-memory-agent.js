@@ -66,6 +66,22 @@ export class LayeredMemoryAgent extends GigaChatAgent {
     };
   }
 
+  async setUserProfile(profile) {
+    this.memory.long.userProfile = {
+      ...(this.memory.long.userProfile || {}),
+      ...profile
+    };
+    await this.saveMemory();
+  }
+
+  async setPreferences(preferences) {
+    this.memory.long.preferences = {
+      ...(this.memory.long.preferences || {}),
+      ...preferences
+    };
+    await this.saveMemory();
+  }
+
   async remember(layer, key, value) {
     if (!MEMORY_LAYERS.has(layer)) {
       throw new Error("Слой памяти должен быть short, working или long.");
@@ -116,6 +132,9 @@ export class LayeredMemoryAgent extends GigaChatAgent {
   buildMemoryPrompt() {
     return [
       this.systemPrompt,
+      "",
+      "Персонализация: всегда адаптируй ответ под userProfile и preferences из долговременной памяти.",
+      "Учитывай стиль, формат, ограничения, уровень пользователя и цель обучения автоматически.",
       "",
       "Долговременная память: профиль, устойчивые предпочтения, решения и знания.",
       JSON.stringify(this.memory.long, null, 2),
@@ -175,10 +194,22 @@ export class LayeredMemoryAgent extends GigaChatAgent {
   }
 
   createLayeredMemoryMockCompletion(userInput, contextTokens) {
+    const profile = this.memory.long.userProfile || {};
+    const preferences = this.memory.long.preferences || {};
+    const legacyProfile = this.memory.long.profile || this.memory.long.style;
+    const profileDescription =
+      profile.name || profile.role || profile.level
+        ? `${profile.name || "пользователь"} (${profile.role || "роль не указана"}, ${profile.level || "уровень не указан"})`
+        : legacyProfile || "нет профиля";
+    const preferredStyle = preferences.style || this.memory.long.style || "обычный стиль";
+    const preferredFormat = preferences.format || "свободный формат";
+    const limitations = preferences.limitations || this.memory.working.constraints || "нет ограничений";
     const wantsMemory =
       /что ты помнишь|памят|какие данные|слои/i.test(userInput);
     const wantsPlan =
       /план|рекомендац|как отвечать|сформируй/i.test(userInput);
+    const wantsPersonalized =
+      /персонал|адаптир|учти профиль|под меня|для меня/i.test(userInput);
     const answer = wantsMemory
       ? [
           `Краткосрочная память: ${this.memory.short.length} сообщений.`,
@@ -187,11 +218,18 @@ export class LayeredMemoryAgent extends GigaChatAgent {
         ].join(" ")
       : wantsPlan
         ? [
-            `Учитываю профиль: ${this.memory.long.profile || this.memory.long.style || "нет профиля"}.`,
+            `Учитываю профиль: ${profileDescription}.`,
+            `Стиль: ${preferredStyle}.`,
+            `Формат: ${preferredFormat}.`,
             `Текущая задача: ${this.memory.working.goal || this.memory.working.task || "не указана"}.`,
-            `Ограничения: ${this.memory.working.constraints || "не указаны"}.`
+            `Ограничения: ${limitations}.`
           ].join(" ")
-        : "Принято. Я использую краткосрочную, рабочую и долговременную память раздельно.";
+        : wantsPersonalized
+          ? [
+              `Адаптирую ответ под профиль: ${profileDescription}.`,
+              `Буду соблюдать стиль "${preferredStyle}", формат "${preferredFormat}" и ограничения: ${limitations}.`
+            ].join(" ")
+          : "Принято. Я использую краткосрочную, рабочую и долговременную память раздельно.";
     const completionTokens = Math.ceil(answer.length / 3.5);
 
     return {

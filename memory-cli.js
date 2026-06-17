@@ -30,6 +30,8 @@ function printHelp() {
   console.log("/remember short ROLE TEXT");
   console.log("/remember working KEY VALUE");
   console.log("/remember long KEY VALUE");
+  console.log("/profile KEY=VALUE; KEY=VALUE");
+  console.log("/preferences KEY=VALUE; KEY=VALUE");
   console.log("/memory");
   console.log("/forget working KEY");
   console.log("/forget long KEY");
@@ -73,6 +75,14 @@ for await (const line of cli) {
     }
   } else if (text === "/help") {
     printHelp();
+  } else if (text.startsWith("/profile ")) {
+    const profile = parseKeyValueList(text.slice("/profile ".length));
+    await agent.setUserProfile(profile);
+    console.log("Профиль пользователя обновлен.");
+  } else if (text.startsWith("/preferences ")) {
+    const preferences = parseKeyValueList(text.slice("/preferences ".length));
+    await agent.setPreferences(preferences);
+    console.log("Предпочтения обновлены.");
   } else {
     try {
       const answer = await agent.chat(text);
@@ -90,3 +100,17 @@ for await (const line of cli) {
 
 cli.close();
 console.log("Чат завершен.");
+
+function parseKeyValueList(inputText) {
+  return Object.fromEntries(
+    inputText
+      .split(";")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => {
+        const [key, ...valueParts] = item.split("=");
+        return [key.trim(), valueParts.join("=").trim()];
+      })
+      .filter(([key, value]) => key && value)
+  );
+}
