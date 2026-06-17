@@ -12,6 +12,9 @@
     "strategy-chat": "node strategy-cli.js",
     "strategy-chat:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node strategy-cli.js",
     "strategy-demo": "node strategy-demo.js",
-    "strategy-demo:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node strategy-demo.js --real"
+    "strategy-demo:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node strategy-demo.js --real",
+    "memory-chat": "node memory-cli.js",
+    "memory-chat:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node memory-cli.js",
+    "memory-demo": "node memory-demo.js"
   }
 }

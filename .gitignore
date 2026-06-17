@@ -3,5 +3,7 @@ node_modules/
 .DS_Store
 chat-history.json
 chat-history.json.tmp
+memory-layers.json
+memory-layers.json.tmp
 certs/*.crt
 certs/*.pem
