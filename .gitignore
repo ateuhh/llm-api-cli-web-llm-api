@@ -7,5 +7,7 @@ memory-layers.json
 memory-layers.json.tmp
 task-state.json
 task-state.json.tmp
+invariants.json
+invariants.json.tmp
 certs/*.crt
 certs/*.pem

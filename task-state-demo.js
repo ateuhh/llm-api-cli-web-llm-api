@@ -20,8 +20,29 @@ await agent.startTask("Подготовить README для демо", [
   "Написать раздел запуска",
   "Добавить проверку результата"
 ]);
+await agent.addInvariant({
+  type: "fixed",
+  key: "архитектура",
+  value: "REST API",
+  description: "Архитектура зафиксирована: REST API"
+});
+await agent.addInvariant({
+  type: "forbid",
+  key: "технология",
+  value: "GraphQL",
+  description: "GraphQL запрещен в этом проекте"
+});
+await agent.addInvariant({
+  type: "fixed",
+  key: "база данных",
+  value: "PostgreSQL",
+  description: "База данных зафиксирована: PostgreSQL"
+});
 console.log(JSON.stringify(agent.snapshotState(), null, 2));
 console.log(await agent.chat("Что делать дальше?"));
+
+console.log("\n=== Конфликт запроса с инвариантом ===");
+console.log(await agent.chat("Давай заменим REST API на GraphQL и MongoDB."));
 
 console.log("\n=== Переход planning -> execution ===");
 await agent.advance("План согласован");

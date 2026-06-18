@@ -24,7 +24,7 @@ await agent.loadState();
 const cli = createInterface({ input, output });
 
 console.log(`Task State Machine Agent запущен${useMock ? " в mock-режиме" : ""}.`);
-console.log("Команды: /start TASK | step1; step2, /state, /advance NOTE, /pause REASON, /resume, /exit");
+console.log("Команды: /start TASK | step1; step2, /state, /invariant TYPE KEY VALUE, /invariants, /advance NOTE, /pause REASON, /resume, /exit");
 output.write("\nВы: ");
 
 for await (const line of cli) {
@@ -36,6 +36,19 @@ for await (const line of cli) {
 
   if (text === "/state") {
     console.log(JSON.stringify(agent.snapshotState(), null, 2));
+  } else if (text === "/invariants") {
+    console.log(JSON.stringify(agent.listInvariants(), null, 2));
+  } else if (text.startsWith("/invariant ")) {
+    const [, type, key, ...valueParts] = text.split(" ");
+    const value = valueParts.join(" ");
+    const invariant = await agent.addInvariant({
+      type,
+      key,
+      value,
+      description: `${key}: ${value}`
+    });
+    console.log("Инвариант добавлен.");
+    console.log(JSON.stringify(invariant, null, 2));
   } else if (text.startsWith("/start ")) {
     const [taskName, planText = ""] = text.slice("/start ".length).split("|");
     const plan = planText

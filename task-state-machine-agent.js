@@ -40,6 +40,7 @@ export class TaskStateMachineAgent extends LayeredMemoryAgent {
       paused: false,
       taskName: "",
       plan: [],
+      invariants: [],
       completedSteps: [],
       validationNotes: []
     };
@@ -84,6 +85,30 @@ export class TaskStateMachineAgent extends LayeredMemoryAgent {
 
   snapshotState() {
     return JSON.parse(JSON.stringify(this.taskState));
+  }
+
+  async addInvariant({ type, key, value, description }) {
+    const invariant = {
+      id: crypto.randomUUID(),
+      type,
+      key,
+      value,
+      description: description || `${key}: ${value}`
+    };
+    this.taskState.invariants.push(invariant);
+    await this.saveState();
+    return invariant;
+  }
+
+  async removeInvariant(id) {
+    this.taskState.invariants = this.taskState.invariants.filter(
+      (invariant) => invariant.id !== id
+    );
+    await this.saveState();
+  }
+
+  listInvariants() {
+    return this.taskState.invariants.map((invariant) => ({ ...invariant }));
   }
 
   async startTask(taskName, plan = []) {
@@ -164,13 +189,33 @@ export class TaskStateMachineAgent extends LayeredMemoryAgent {
       "Состояние задачи:",
       JSON.stringify(this.taskState, null, 2),
       "",
+      "Инварианты задачи:",
+      JSON.stringify(this.taskState.invariants, null, 2),
+      "",
       "Правила конечного автомата:",
       "planning -> execution -> validation -> done",
-      "Если paused=true, не начинай заново: объясни, где остановились и какое действие ожидается."
+      "Если paused=true, не начинай заново: объясни, где остановились и какое действие ожидается.",
+      "Никогда не предлагай решения, нарушающие инварианты. При конфликте явно откажись и объясни, какой инвариант нарушен."
     ].join("\n");
   }
 
   async chat(userInput) {
+    const conflict = this.checkInvariantConflict(userInput);
+
+    if (conflict) {
+      const refusal = [
+        "Отказываюсь предлагать это решение, потому что оно нарушает инвариант задачи.",
+        `Инвариант: ${conflict.invariant.description}.`,
+        `Конфликт: ${conflict.reason}.`,
+        "Предложите вариант, который сохраняет принятые ограничения."
+      ].join(" ");
+      this.addShortMessage({ role: "user", content: userInput });
+      this.addShortMessage({ role: "assistant", content: refusal });
+      await this.saveMemory();
+      await this.saveState();
+      return refusal;
+    }
+
     const statePrompt = this.buildStatePrompt();
     const content = [
       statePrompt,
@@ -178,6 +223,48 @@ export class TaskStateMachineAgent extends LayeredMemoryAgent {
       `Запрос пользователя: ${userInput}`
     ].join("\n");
     return super.chat(content);
+  }
+
+  checkInvariantConflict(userInput) {
+    const normalizedInput = userInput.toLowerCase();
+
+    for (const invariant of this.taskState.invariants) {
+      const normalizedValue = String(invariant.value || "").toLowerCase();
+      const normalizedKey = String(invariant.key || "").toLowerCase();
+
+      if (invariant.type === "forbid" && normalizedInput.includes(normalizedValue)) {
+        return {
+          invariant,
+          reason: `запрос содержит запрещенное значение "${invariant.value}"`
+        };
+      }
+
+      if (
+        invariant.type === "fixed" &&
+        normalizedKey.includes("архитект") &&
+        normalizedValue.includes("rest") &&
+        normalizedInput.includes("graphql")
+      ) {
+        return {
+          invariant,
+          reason: "запрос предлагает GraphQL вместо зафиксированной REST-архитектуры"
+        };
+      }
+
+      if (
+        invariant.type === "fixed" &&
+        normalizedKey.includes("база") &&
+        normalizedInput.includes("mongodb") &&
+        !normalizedValue.includes("mongodb")
+      ) {
+        return {
+          invariant,
+          reason: `запрос предлагает MongoDB вместо зафиксированного значения "${invariant.value}"`
+        };
+      }
+    }
+
+    return null;
   }
 
   createLayeredMemoryMockCompletion(userInput, contextTokens) {
@@ -188,6 +275,7 @@ export class TaskStateMachineAgent extends LayeredMemoryAgent {
           `Этап: ${state.phase}.`,
           `Текущий шаг: ${state.currentStep}.`,
           `Ожидаемое действие: ${state.expectedAction}.`,
+          `Инварианты: ${state.invariants.map((invariant) => invariant.description).join("; ") || "не заданы"}.`,
           `Продолжать можно без повторного объяснения задачи.`
         ].join(" ");
     const completionTokens = Math.ceil(answer.length / 3.5);
