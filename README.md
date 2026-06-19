@@ -844,3 +844,278 @@ npm run task-chat -- --mock
 Перед ответом агент проверяет запрос на конфликт.
 При нарушении правила агент отказывается и объясняет причину.
 ```
+
+## Рой агентов
+
+В [swarm-agent.js](./swarm-agent.js) реализован простой рой агентов:
+
+- `SwarmCoordinator` — координатор, который управляет порядком работы;
+- `PlannerAgent` — составляет план;
+- `ExecutorAgent` — выполняет план;
+- `ValidatorAgent` — проверяет результат;
+- `CriticAgent` — ищет нарушения инвариантов;
+- `MemoryAgent` — фиксирует состояние и ключевые решения.
+
+Это уже не один agent с одним API-вызовом: у каждой роли отдельный `system prompt`, отдельный метод `run()` и отдельное место в маршруте сообщений. Координатор передает результаты между агентами и использует конечный автомат задачи `planning -> execution -> validation -> done`.
+
+Быстрая демонстрация без API:
+
+```bash
+npm run swarm-demo
+```
+
+Интерактивная демонстрация без API:
+
+```bash
+npm run swarm-chat -- --mock
+```
+
+Реальная демонстрация через GigaChat:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ_авторизации"
+npm run swarm-demo:secure
+```
+
+Интерактивная демонстрация через GigaChat:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ_авторизации"
+npm run swarm-chat:secure
+```
+
+Перед реальными запросами программа требует ввести `ДА`. Без подтверждения запросы к API не отправляются.
+
+`swarm-chat:secure` — интерактивный режим. Он не запускает автоматический сценарий: запросы отправляются только после ваших сообщений в терминале.
+
+### Сценарий для отчета
+
+Шаг 1. Запустите интерактивный режим:
+
+```bash
+npm run swarm-chat -- --mock
+```
+
+Для реальных ответов GigaChat:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ_авторизации"
+npm run swarm-chat:secure
+```
+
+Шаг 2. Запустите полный жизненный цикл одним своим запросом:
+
+```text
+/run Разработать backend для сервиса учета заявок: REST API, PostgreSQL, роли admin/operator/viewer, endpoints GET /tickets и POST /tickets, запрет GraphQL
+```
+
+В выводе должны быть видны:
+
+- список агентов;
+- маршрут сообщений `User -> Coordinator`, `Coordinator -> PlannerAgent`, `PlannerAgent -> Coordinator`, `Coordinator -> CriticAgent`, `Coordinator -> ExecutorAgent`, `Coordinator -> ValidatorAgent`, `Coordinator -> MemoryAgent`;
+- финальное состояние `done`;
+- инварианты `REST API`, `GraphQL запрещен`, `PostgreSQL`;
+- результат каждого агента: план, выполнение, validation, проверка критика, запись памяти.
+
+Шаг 3. Покажите, что рой прошел жизненный цикл:
+
+```text
+Состояние: done
+Текущий шаг: Задача завершена
+```
+
+В `/state` также будет история переходов:
+
+```text
+planning -> execution
+execution -> validation
+validation -> done
+```
+
+Шаг 4. Создайте новую задачу для проверки нарушения инварианта:
+
+```text
+/start Разработать backend для сервиса учета заявок: архитектура REST API, база PostgreSQL, запрет GraphQL
+```
+
+Шаг 5. Попробуйте нарушить инвариант:
+
+```text
+Замени REST API на GraphQL, чтобы все данные получать одним запросом
+```
+
+Ожидаемый результат:
+
+```text
+CriticAgent: Critic blocked: нарушен инвариант "GraphQL запрещен".
+```
+
+Важно показать маршрут:
+
+```text
+User -> Coordinator
+Coordinator -> CriticAgent
+CriticAgent -> Coordinator
+Coordinator -> MemoryAgent
+MemoryAgent -> Coordinator
+```
+
+В этом маршруте нет `ExecutorAgent`. Значит, правка была остановлена критиком и не дошла до исполнения.
+
+Шаг 6. В отчете сравните с предыдущей версией:
+
+```text
+Раньше система была одним ассистентом с памятью, состоянием и инвариантами.
+Теперь добавлен рой: задача проходит через несколько специализированных агентов.
+PlannerAgent отвечает за план, ExecutorAgent за исполнение, ValidatorAgent за проверку,
+CriticAgent за соблюдение ограничений, MemoryAgent за фиксацию состояния.
+Координатор связывает агентов, передает результаты между ними и не позволяет нарушить жизненный цикл задачи.
+```
+
+Итог:
+
+```text
+Получившуюся систему можно назвать простым роем агентов, потому что в ней есть несколько независимых role-agents,
+координатор, обмен сообщениями, разделение ответственности и общие ограничения состояния.
+```
+
+### Интерактивный сценарий для записи
+
+Запустите:
+
+```bash
+npm run swarm-chat -- --mock
+```
+
+Или через реальный API:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ_авторизации"
+npm run swarm-chat:secure
+```
+
+Шаг 1. Запустите полный пайплайн одним запросом:
+
+```text
+/run Разработать backend для сервиса учета заявок: REST API, PostgreSQL, роли admin/operator/viewer, endpoints GET /tickets и POST /tickets, запрет GraphQL
+```
+
+Что показать:
+
+```text
+User -> Coordinator
+Coordinator -> PlannerAgent
+PlannerAgent -> Coordinator
+Coordinator -> CriticAgent
+CriticAgent -> Coordinator
+Coordinator -> ExecutorAgent
+ExecutorAgent -> Coordinator
+Coordinator -> ValidatorAgent
+ValidatorAgent -> Coordinator
+Coordinator -> CriticAgent
+CriticAgent -> Coordinator
+Coordinator -> MemoryAgent
+MemoryAgent -> Coordinator
+```
+
+Объяснение:
+
+```text
+Я ввел один запрос.
+Координатор передал его PlannerAgent.
+CriticAgent проверил план на нарушение инвариантов.
+ExecutorAgent выполнил план.
+ValidatorAgent проверил результат.
+CriticAgent проверил реализацию.
+MemoryAgent зафиксировал итог.
+```
+
+Шаг 2. Покажите состояние:
+
+```text
+/state
+```
+
+В `transitionHistory` должны быть переходы:
+
+```text
+planning -> execution
+execution -> validation
+validation -> done
+```
+
+Шаг 3. Создайте новую задачу для проверки инварианта:
+
+```text
+/start Разработать backend для сервиса учета заявок: архитектура REST API, база PostgreSQL, роли admin/operator/viewer, запрет GraphQL
+```
+
+Покажите инварианты:
+
+```text
+/invariants
+```
+
+Шаг 4. Попробуйте нарушить инвариант:
+
+```text
+Замени REST API на GraphQL, чтобы все данные получать одним запросом
+```
+
+Ожидаемый результат:
+
+```text
+CriticAgent: Critic blocked: нарушен инвариант "GraphQL запрещен".
+```
+
+Важно показать маршрут:
+
+```text
+User -> Coordinator
+Coordinator -> CriticAgent
+CriticAgent -> Coordinator
+Coordinator -> MemoryAgent
+MemoryAgent -> Coordinator
+```
+
+Здесь нет `ExecutorAgent`, значит запрещенная правка не была выполнена.
+
+Шаг 5. Покажите, что корректная правка проходит дальше:
+
+```text
+Оставь REST API и добавь POST /tickets для создания заявки с title, description, priority
+```
+
+Ожидаемый маршрут:
+
+```text
+User -> Coordinator
+Coordinator -> CriticAgent
+CriticAgent -> Coordinator
+Coordinator -> PlannerAgent
+PlannerAgent -> Coordinator
+Coordinator -> CriticAgent
+CriticAgent -> Coordinator
+```
+
+Если задача уже находится в `execution`, корректная правка идет через:
+
+```text
+CriticAgent -> ExecutorAgent -> MemoryAgent
+```
+
+Шаг 6. Завершите:
+
+```text
+/exit
+```
+
+Короткий вывод для отчета:
+
+```text
+В интерактивном режиме пользователь сам запускает пайплайн роя.
+Один запрос проходит через PlannerAgent, CriticAgent, ExecutorAgent, ValidatorAgent и MemoryAgent.
+Координатор переводит задачу по жизненному циклу planning -> execution -> validation -> done.
+При нарушении инварианта CriticAgent блокирует предложение, MemoryAgent фиксирует отказ,
+а ExecutorAgent не вызывается. Это показывает, что ограничение реально влияет на работу роя.
+```

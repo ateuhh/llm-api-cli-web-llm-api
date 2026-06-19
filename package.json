@@ -19,6 +19,10 @@
     "personalization-demo": "node personalization-demo.js",
     "task-chat": "node task-state-cli.js",
     "task-chat:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node task-state-cli.js",
-    "task-demo": "node task-state-demo.js"
+    "task-demo": "node task-state-demo.js",
+    "swarm-chat": "node swarm-cli.js",
+    "swarm-chat:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node swarm-cli.js",
+    "swarm-demo": "node swarm-demo.js",
+    "swarm-demo:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node swarm-demo.js --real"
   }
 }
