@@ -24,7 +24,7 @@ await agent.loadState();
 const cli = createInterface({ input, output });
 
 console.log(`Task State Machine Agent запущен${useMock ? " в mock-режиме" : ""}.`);
-console.log("Команды: /start TASK | step1; step2, /state, /invariant TYPE KEY VALUE, /invariants, /advance NOTE, /pause REASON, /resume, /exit");
+console.log("Команды: /start TASK | step1; step2, /state, /transition PHASE NOTE, /invariant TYPE KEY VALUE, /invariants, /advance NOTE, /pause REASON, /resume, /exit");
 output.write("\nВы: ");
 
 for await (const line of cli) {
@@ -60,9 +60,22 @@ for await (const line of cli) {
     console.log(JSON.stringify(agent.snapshotState(), null, 2));
   } else if (text.startsWith("/advance")) {
     const note = text.slice("/advance".length).trim();
-    await agent.advance(note);
-    console.log("Переход выполнен.");
-    console.log(JSON.stringify(agent.snapshotState(), null, 2));
+    try {
+      await agent.advance(note);
+      console.log("Переход выполнен.");
+      console.log(JSON.stringify(agent.snapshotState(), null, 2));
+    } catch (error) {
+      console.error(`Переход отклонен: ${error.message}`);
+    }
+  } else if (text.startsWith("/transition ")) {
+    const [, phase, ...noteParts] = text.split(" ");
+    try {
+      await agent.transitionTo(phase, noteParts.join(" "));
+      console.log("Переход выполнен.");
+      console.log(JSON.stringify(agent.snapshotState(), null, 2));
+    } catch (error) {
+      console.error(`Переход отклонен: ${error.message}`);
+    }
   } else if (text.startsWith("/pause")) {
     const reason = text.slice("/pause".length).trim();
     await agent.pause(reason);

@@ -661,6 +661,7 @@ npm run task-chat:secure
 ```text
 /start TASK | step1; step2; step3
 /state
+/transition PHASE NOTE
 /advance NOTE
 /pause REASON
 /resume
@@ -699,6 +700,78 @@ npm run task-chat -- --mock
 Задача представлена как конечный автомат с phase, currentStep и expectedAction.
 Состояние сохраняется в JSON, поэтому агент может быть остановлен и продолжен без потери этапа.
 Пауза фиксирует, где остановились и какое действие ожидается дальше.
+```
+
+## Контролируемые переходы состояний
+
+У Task State Machine есть явная таблица разрешенных переходов:
+
+```text
+planning -> execution
+execution -> validation
+validation -> done
+done -> []
+```
+
+Запрещено перепрыгивать этапы:
+
+- нельзя `planning -> validation`;
+- нельзя `planning -> done`;
+- нельзя `execution -> done`;
+- нельзя менять этап, пока задача на паузе.
+
+Быстрая проверка:
+
+```bash
+npm run task-demo
+```
+
+В выводе будут блоки:
+
+```text
+=== Недопустимый переход planning -> validation ===
+=== Недопустимый переход planning -> done ===
+=== Недопустимый переход execution -> done ===
+=== Недопустимый переход во время паузы ===
+```
+
+Интерактивно:
+
+```bash
+npm run task-chat -- --mock
+```
+
+Сценарий:
+
+```text
+/start Demo | plan; code; test
+/transition done Попытка сразу завершить
+/transition validation Попытка пропустить execution
+/transition execution План утвержден
+/transition done Попытка завершить без validation
+/pause Перерыв
+/transition validation Попытка перейти во время паузы
+/resume
+/advance plan done
+/advance code done
+/advance test done
+/transition done validation ok
+```
+
+Ожидаемо:
+
+- первые два перехода отклоняются, потому что из `planning` можно только в `execution`;
+- `execution -> done` отклоняется, потому что перед `done` нужна `validation`;
+- переход во время паузы отклоняется до `/resume`;
+- после выполнения шагов агент переходит в `validation`;
+- после validation разрешен переход в `done`.
+
+Итог для отчета:
+
+```text
+Жизненный цикл задачи контролируется конечным автоматом.
+Переходы разрешены только по таблице planning -> execution -> validation -> done.
+Ассистент не может перепрыгнуть этап, завершить задачу без validation или менять состояние во время паузы.
 ```
 
 ## Инварианты состояния

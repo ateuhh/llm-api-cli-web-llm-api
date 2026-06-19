@@ -41,6 +41,20 @@ await agent.addInvariant({
 console.log(JSON.stringify(agent.snapshotState(), null, 2));
 console.log(await agent.chat("Что делать дальше?"));
 
+console.log("\n=== Недопустимый переход planning -> validation ===");
+try {
+  await agent.transitionTo("validation", "Пытаемся пропустить execution");
+} catch (error) {
+  console.log(`Переход отклонен: ${error.message}`);
+}
+
+console.log("\n=== Недопустимый переход planning -> done ===");
+try {
+  await agent.transitionTo("done", "Пытаемся завершить без выполнения и проверки");
+} catch (error) {
+  console.log(`Переход отклонен: ${error.message}`);
+}
+
 console.log("\n=== Конфликт запроса с инвариантом ===");
 console.log(await agent.chat("Давай заменим REST API на GraphQL и MongoDB."));
 
@@ -48,9 +62,23 @@ console.log("\n=== Переход planning -> execution ===");
 await agent.advance("План согласован");
 console.log(JSON.stringify(agent.snapshotState(), null, 2));
 
+console.log("\n=== Недопустимый переход execution -> done ===");
+try {
+  await agent.transitionTo("done", "Пытаемся завершить без validation");
+} catch (error) {
+  console.log(`Переход отклонен: ${error.message}`);
+}
+
 console.log("\n=== Пауза на execution ===");
 await agent.pause("Пользователь ушел на созвон");
 console.log(await agent.chat("Можно остановиться?"));
+
+console.log("\n=== Недопустимый переход во время паузы ===");
+try {
+  await agent.transitionTo("validation", "Пытаемся перейти дальше во время паузы");
+} catch (error) {
+  console.log(`Переход отклонен: ${error.message}`);
+}
 
 console.log("\n=== Перезапуск приложения ===");
 agent = await createAgent(statePath);

@@ -9,6 +9,12 @@ const NEXT_PHASE = {
   validation: "done",
   done: "done"
 };
+const ALLOWED_TRANSITIONS = {
+  planning: ["execution"],
+  execution: ["validation"],
+  validation: ["done"],
+  done: []
+};
 
 const PHASE_EXPECTATIONS = {
   planning: "Сформулировать план и подтвердить шаги.",
@@ -41,6 +47,7 @@ export class TaskStateMachineAgent extends LayeredMemoryAgent {
       taskName: "",
       plan: [],
       invariants: [],
+      transitionHistory: [],
       completedSteps: [],
       validationNotes: []
     };
@@ -136,20 +143,78 @@ export class TaskStateMachineAgent extends LayeredMemoryAgent {
     await this.saveState();
   }
 
+  canTransitionTo(targetPhase) {
+    return ALLOWED_TRANSITIONS[this.taskState.phase]?.includes(targetPhase) || false;
+  }
+
+  assertTransitionAllowed(targetPhase) {
+    if (!PHASES.includes(targetPhase)) {
+      throw new Error(`Недопустимое состояние "${targetPhase}". Разрешены: ${PHASES.join(", ")}.`);
+    }
+
+    if (this.taskState.paused) {
+      throw new Error(
+        `Нельзя менять состояние во время паузы. Текущий этап: ${this.taskState.phase}. Сначала выполните /resume.`
+      );
+    }
+
+    if (!this.canTransitionTo(targetPhase)) {
+      const allowed = ALLOWED_TRANSITIONS[this.taskState.phase];
+      throw new Error(
+        [
+          `Переход ${this.taskState.phase} -> ${targetPhase} запрещен.`,
+          allowed.length > 0
+            ? `Разрешенный следующий этап: ${allowed.join(", ")}.`
+            : "Из текущего этапа нет дальнейших переходов.",
+          "Нельзя перепрыгивать этапы жизненного цикла задачи."
+        ].join(" ")
+      );
+    }
+  }
+
+  async transitionTo(targetPhase, note = "", { recordCompletedStep = true } = {}) {
+    this.assertTransitionAllowed(targetPhase);
+
+    const from = this.taskState.phase;
+    if (note && recordCompletedStep) {
+      this.taskState.completedSteps.push({
+        phase: from,
+        step: this.taskState.currentStep,
+        note
+      });
+    }
+    this.taskState.transitionHistory.push({
+      from,
+      to: targetPhase,
+      note,
+      at: new Date().toISOString()
+    });
+    this.taskState.phase = targetPhase;
+    this.taskState.currentStep = this.stepForPhase(targetPhase);
+    this.taskState.expectedAction = PHASE_EXPECTATIONS[targetPhase];
+    await this.remember("working", "phase", this.taskState.phase);
+    await this.saveState();
+    return this.snapshotState();
+  }
+
   async advance(note = "") {
     if (this.taskState.phase === "done") {
       return this.snapshotState();
     }
 
-    if (note) {
-      this.taskState.completedSteps.push({
-        phase: this.taskState.phase,
-        step: this.taskState.currentStep,
-        note
-      });
-    }
-
     if (this.taskState.phase === "execution") {
+      if (this.taskState.paused) {
+        throw new Error(
+          `Нельзя менять состояние во время паузы. Текущий этап: ${this.taskState.phase}. Сначала выполните /resume.`
+        );
+      }
+      if (note) {
+        this.taskState.completedSteps.push({
+          phase: this.taskState.phase,
+          step: this.taskState.currentStep,
+          note
+        });
+      }
       const nextStepIndex = this.taskState.completedSteps.filter(
         (step) => step.phase === "execution"
       ).length;
@@ -163,12 +228,9 @@ export class TaskStateMachineAgent extends LayeredMemoryAgent {
       }
     }
 
-    this.taskState.phase = NEXT_PHASE[this.taskState.phase];
-    this.taskState.currentStep = this.stepForPhase(this.taskState.phase);
-    this.taskState.expectedAction = PHASE_EXPECTATIONS[this.taskState.phase];
-    await this.remember("working", "phase", this.taskState.phase);
-    await this.saveState();
-    return this.snapshotState();
+    return this.transitionTo(NEXT_PHASE[this.taskState.phase], note, {
+      recordCompletedStep: false
+    });
   }
 
   stepForPhase(phase) {
@@ -194,6 +256,8 @@ export class TaskStateMachineAgent extends LayeredMemoryAgent {
       "",
       "Правила конечного автомата:",
       "planning -> execution -> validation -> done",
+      `Разрешённые переходы: ${JSON.stringify(ALLOWED_TRANSITIONS)}.`,
+      "Запрещено перепрыгивать этапы: нельзя делать execution до planning, нельзя done без validation.",
       "Если paused=true, не начинай заново: объясни, где остановились и какое действие ожидается.",
       "Никогда не предлагай решения, нарушающие инварианты. При конфликте явно откажись и объясни, какой инвариант нарушен."
     ].join("\n");
