@@ -25,7 +25,8 @@
     "swarm-demo": "node swarm-demo.js",
     "swarm-demo:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node swarm-demo.js --real",
     "mcp-server": "node mcp-server.js",
-    "mcp-tools": "node mcp-client.js"
+    "mcp-tools": "node mcp-client.js",
+    "mcp-agent": "node mcp-agent.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
