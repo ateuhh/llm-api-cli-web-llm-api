@@ -14,6 +14,9 @@ class McpSchedulerAgent {
       name: "llm-api-cli-mcp-scheduler-agent",
       version: "1.0.0"
     });
+    this.seenRuns = new Set();
+    this.liveUpdatesTimer = null;
+    this.liveUpdatesInProgress = false;
   }
 
   async connect() {
@@ -21,6 +24,7 @@ class McpSchedulerAgent {
   }
 
   async close() {
+    this.stopLiveUpdates();
     await this.transport.close();
   }
 
@@ -35,6 +39,7 @@ class McpSchedulerAgent {
 
   async startSummary({ name, interval, cwd }) {
     const result = await this.callJsonTool("schedule_summary", { name, interval, cwd });
+    this.markTaskRunsSeen(result.task);
     return [
       result.message,
       `ID: ${result.task.id}`,
@@ -74,6 +79,65 @@ class McpSchedulerAgent {
   async stopSummary(id) {
     const result = await this.callJsonTool("stop_summary", { id });
     return result.message;
+  }
+
+  markTaskRunsSeen(task) {
+    for (const run of task.history || task.recentRuns || []) {
+      this.seenRuns.add(`${task.id}:${run.at}`);
+    }
+  }
+
+  markAllRunsSeen(result) {
+    for (const task of result.tasks || []) {
+      this.markTaskRunsSeen(task);
+    }
+  }
+
+  formatRun(task, run) {
+    return [
+      "",
+      `[MCP summary #${task.id}: ${task.name}]`,
+      `Время: ${run.at}`,
+      `Результат: ${run.summary}`
+    ].join("\n");
+  }
+
+  async loadCurrentRunsAsSeen() {
+    const result = await this.callJsonTool("list_summaries");
+    this.markAllRunsSeen(result);
+  }
+
+  startLiveUpdates({ onUpdate, onError, intervalMs = 1000 }) {
+    this.liveUpdatesTimer = setInterval(async () => {
+      if (this.liveUpdatesInProgress) {
+        return;
+      }
+
+      this.liveUpdatesInProgress = true;
+      try {
+        const result = await this.callJsonTool("list_summaries");
+        for (const task of result.tasks || []) {
+          for (const run of task.recentRuns || []) {
+            const key = `${task.id}:${run.at}`;
+            if (!this.seenRuns.has(key)) {
+              this.seenRuns.add(key);
+              onUpdate(this.formatRun(task, run));
+            }
+          }
+        }
+      } catch (error) {
+        onError(error);
+      } finally {
+        this.liveUpdatesInProgress = false;
+      }
+    }, intervalMs);
+  }
+
+  stopLiveUpdates() {
+    if (this.liveUpdatesTimer) {
+      clearInterval(this.liveUpdatesTimer);
+      this.liveUpdatesTimer = null;
+    }
   }
 }
 
@@ -115,15 +179,31 @@ function printHelp() {
   console.log("/start Git каждые 15 секунд | 15s | .");
 }
 
+function printPrompt() {
+  output.write("\nВы: ");
+}
+
 const agent = new McpSchedulerAgent();
 const cli = createInterface({ input, output });
 
 try {
   await agent.connect();
+  await agent.loadCurrentRunsAsSeen();
+  agent.startLiveUpdates({
+    onUpdate: (message) => {
+      console.log(message);
+      printPrompt();
+    },
+    onError: (error) => {
+      console.error(`Ошибка live updates: ${error.message}`);
+      printPrompt();
+    }
+  });
   console.log("MCP Scheduler Agent запущен.");
   console.log("Пока этот процесс работает, активные задачи выполняются по расписанию.");
+  console.log("Новые результаты периодических сводок будут автоматически выводиться в чат.");
   printHelp();
-  output.write("\nВы: ");
+  printPrompt();
 
   for await (const line of cli) {
     const text = line.trim();
@@ -146,7 +226,7 @@ try {
       console.error(`Ошибка: ${error.message}`);
     }
 
-    output.write("\nВы: ");
+    printPrompt();
   }
 } finally {
   cli.close();
