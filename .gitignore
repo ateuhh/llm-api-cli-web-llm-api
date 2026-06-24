@@ -9,5 +9,7 @@ task-state.json
 task-state.json.tmp
 invariants.json
 invariants.json.tmp
+mcp-scheduler-tasks.json
+mcp-scheduler-tasks.json.tmp
 certs/*.crt
 certs/*.pem
