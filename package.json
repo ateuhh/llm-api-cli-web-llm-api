@@ -27,7 +27,8 @@
     "mcp-server": "node mcp-server.js",
     "mcp-tools": "node mcp-client.js",
     "mcp-agent": "node mcp-agent.js",
-    "mcp-scheduler": "node mcp-scheduler-agent.js"
+    "mcp-scheduler": "node mcp-scheduler-agent.js",
+    "mcp-pipeline": "node mcp-pipeline-agent.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
