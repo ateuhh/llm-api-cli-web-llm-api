@@ -1407,3 +1407,72 @@ MCP-сервер реализует фоновые задачи через sched
 Агент подключается к MCP, создает периодическую сводку, автоматически выводит новые результаты
 в чат, показывает агрегированный результат и умеет отключать задачу по числовому id.
 ```
+
+## Orchestration MCP
+
+Для демонстрации orchestration добавлены два отдельных MCP-сервера:
+
+- [mcp-git-server.js](./mcp-git-server.js) — сервер с Git-инструментом `git_status`;
+- [mcp-files-server.js](./mcp-files-server.js) — сервер с файловыми инструментами `search_project_files`, `summarize_text`, `save_to_file`.
+
+Агент [mcp-orchestrator-agent.js](./mcp-orchestrator-agent.js):
+
+- подключается к обоим MCP-серверам;
+- собирает общий реестр инструментов;
+- выбирает нужный сервер по имени инструмента;
+- маршрутизирует вызовы;
+- выполняет длинный flow через инструменты с разных серверов.
+
+Запуск:
+
+```bash
+npm run mcp-orchestrate
+```
+
+Можно передать поисковый запрос и путь сохранения:
+
+```bash
+npm run mcp-orchestrate -- agent ./mcp-output/orchestrated-agent-summary.md
+```
+
+Ожидаемый порядок вызовов:
+
+```text
+1. git-server -> git_status
+2. files-server -> search_project_files
+3. files-server -> summarize_text
+4. files-server -> save_to_file
+5. git-server -> git_status
+```
+
+Что проверяется:
+
+```text
+Агент сначала берет статус Git с git-server.
+Затем ищет данные в files-server.
+Потом передает результат поиска в summarize_text на files-server.
+После этого сохраняет summary через save_to_file на files-server.
+В конце снова вызывает git_status на git-server, чтобы показать, что сохраненный файл появился в состоянии репозитория.
+```
+
+Ожидаемый вывод:
+
+```text
+Orchestrator подключился к нескольким MCP-серверам.
+
+Реестр инструментов:
+git_status -> git-server
+search_project_files -> files-server
+summarize_text -> files-server
+save_to_file -> files-server
+
+Длинный flow выполнен:
+1. git-server -> git_status
+2. files-server -> search_project_files
+3. files-server -> summarize_text
+4. files-server -> save_to_file
+5. git-server -> git_status
+```
+
+По умолчанию итоговый файл сохраняется в `orchestration-summary.md`, чтобы финальный `git_status` показал новый файл.
+Если передать путь внутри `mcp-output/`, файл будет сохранен, но Git его не покажет, потому что эта папка исключена из Git.
