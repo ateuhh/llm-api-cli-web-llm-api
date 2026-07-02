@@ -29,7 +29,9 @@
     "mcp-agent": "node mcp-agent.js",
     "mcp-scheduler": "node mcp-scheduler-agent.js",
     "mcp-pipeline": "node mcp-pipeline-agent.js",
-    "mcp-orchestrate": "node mcp-orchestrator-agent.js"
+    "mcp-orchestrate": "node mcp-orchestrator-agent.js",
+    "rag-demo": "node rag-demo.js",
+    "rag-demo:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node rag-demo.js --real"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
