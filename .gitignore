@@ -12,5 +12,6 @@ invariants.json.tmp
 mcp-scheduler-tasks.json
 mcp-scheduler-tasks.json.tmp
 mcp-output/
+document-index/
 certs/*.crt
 certs/*.pem

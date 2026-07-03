@@ -1608,3 +1608,86 @@ npm run rag-demo -- --question "Какая команда запускает MCP
 С RAG: .../...
 RAG дал более полный ответ по базе проекта.
 ```
+
+## Индексация документов
+
+В [document-indexer.js](./document-indexer.js) реализован локальный пайплайн индексации:
+
+```text
+документы -> chunking -> embedding -> JSON index
+```
+
+Корпус берется из README и JS-файлов проекта. По объему это больше 20-30 страниц текста в эквиваленте кода и документации.
+
+Запуск:
+
+```bash
+npm run index-docs
+```
+
+Результат сохраняется в папку `document-index/`:
+
+```text
+document-index/index-fixed.json
+document-index/index-structured.json
+document-index/comparison.json
+```
+
+Папка `document-index/` исключена из Git, потому что это генерируемый локальный индекс.
+
+### Что сохраняется в индексе
+
+Каждый чанк содержит:
+
+- `chunk_id`;
+- `text`;
+- `embedding`;
+- `metadata.source`;
+- `metadata.title`;
+- `metadata.section`;
+- `metadata.chunking_strategy`;
+- `metadata.line_start`;
+- `metadata.line_end`;
+- `metadata.start_char`;
+- `metadata.end_char`;
+- `metadata.token_estimate`;
+- `metadata.char_count`.
+
+Embedding генерируется локально через hashing-вектор фиксированной размерности. Это не внешний embedding API, но полноценный локальный векторный индекс для демонстрации пайплайна.
+
+### Две стратегии chunking
+
+`fixed`:
+
+```text
+Режет документы по фиксированному размеру с overlap.
+Плюс: стабильный размер чанков.
+Минус: может разрезать раздел или функцию посередине.
+```
+
+`structured`:
+
+```text
+README режется по markdown-заголовкам.
+JS-файлы режутся по классам, функциям и крупным блокам.
+Плюс: лучше сохраняет смысловые границы.
+Минус: размеры чанков менее равномерные.
+```
+
+В выводе `npm run index-docs` показывается сравнение:
+
+```text
+Корпус:
+  документов: ...
+  строк: ...
+  символов: ...
+  оценка страниц: ...
+
+Стратегии chunking:
+fixed:
+  chunks: ...
+  avg_tokens: ...
+structured:
+  chunks: ...
+  avg_tokens: ...
+```
