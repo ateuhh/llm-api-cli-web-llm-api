@@ -100,6 +100,8 @@ export class RagAgent {
     cwd = ".",
     files = DEFAULT_FILES,
     topK = 4,
+    candidateTopK = 10,
+    relevanceThreshold = 0.55,
     chunkSize = 1200,
     overlap = 180,
     mock = true,
@@ -110,6 +112,8 @@ export class RagAgent {
     this.cwd = cwd;
     this.files = files;
     this.topK = topK;
+    this.candidateTopK = candidateTopK;
+    this.relevanceThreshold = relevanceThreshold;
     this.chunkSize = chunkSize;
     this.overlap = overlap;
     this.mock = mock;
@@ -236,8 +240,22 @@ export class RagAgent {
     return [...tokens, ...extra.flatMap((item) => this.tokenize(item))];
   }
 
-  search(question, topK = this.topK, preferredSources = []) {
-    const queryTokens = this.expandQueryTokens(question, this.tokenize(question));
+  rewriteQuery(question) {
+    const originalTokens = this.tokenize(question);
+    const expandedTokens = this.expandQueryTokens(question, originalTokens);
+    const uniqueTokens = [...new Set(expandedTokens)];
+
+    return {
+      original: question,
+      rewritten: uniqueTokens.join(" "),
+      tokens: uniqueTokens
+    };
+  }
+
+  search(question, topK = this.topK, preferredSources = [], { rewrite = true } = {}) {
+    const queryTokens = rewrite
+      ? this.rewriteQuery(question).tokens
+      : this.tokenize(question);
     const querySet = new Set(queryTokens);
     const preferred = new Set(preferredSources);
 
@@ -268,6 +286,43 @@ export class RagAgent {
       .filter((chunk) => chunk.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
+  }
+
+  rerankAndFilter(question, candidates, preferredSources = []) {
+    const rewritten = this.rewriteQuery(question);
+    const querySet = new Set(rewritten.tokens);
+    const preferred = new Set(preferredSources);
+
+    const reranked = candidates
+      .map((chunk) => {
+        const uniqueChunkTokens = [...new Set(chunk.tokens)];
+        const overlap = uniqueChunkTokens.filter((token) => querySet.has(token)).length;
+        const similarity = querySet.size === 0 ? 0 : overlap / querySet.size;
+        const sourceBoost = preferred.has(chunk.source) ? 0.18 : 0;
+        const codeBoost = /(?:npm run|const |class |function |export |[a-z]+_[a-z_]+)/i.test(chunk.text) ? 0.06 : 0;
+        const finalScore = similarity + sourceBoost + codeBoost + (chunk.score / 1000);
+
+        return {
+          ...chunk,
+          similarity,
+          finalScore,
+          passedFilter: similarity + sourceBoost >= this.relevanceThreshold
+        };
+      })
+      .sort((a, b) => b.finalScore - a.finalScore);
+
+    const filtered = reranked.filter((chunk) => chunk.passedFilter);
+
+    return {
+      rewrittenQuery: rewritten.rewritten,
+      candidates,
+      reranked,
+      filtered,
+      selected: (filtered.length > 0 ? filtered : reranked).slice(0, this.topK),
+      threshold: this.relevanceThreshold,
+      topKBefore: candidates.length,
+      topKAfter: Math.min(this.topK, (filtered.length > 0 ? filtered : reranked).length)
+    };
   }
 
   buildRagPrompt(question, chunks) {
@@ -310,15 +365,32 @@ export class RagAgent {
     return completion.answer;
   }
 
-  async askWithRag(question, { preferredSources = [] } = {}) {
-    const chunks = this.search(question, this.topK, preferredSources);
+  async askWithRag(question, { preferredSources = [], mode = "enhanced" } = {}) {
+    const retrieval = mode === "baseline"
+      ? {
+          rewrittenQuery: question,
+          candidates: [],
+          reranked: [],
+          filtered: [],
+          selected: this.search(question, this.topK, preferredSources, { rewrite: false }),
+          threshold: null,
+          topKBefore: this.topK,
+          topKAfter: this.topK
+        }
+      : this.rerankAndFilter(
+          question,
+          this.search(question, this.candidateTopK, preferredSources, { rewrite: true }),
+          preferredSources
+        );
+    const chunks = retrieval.selected;
     const prompt = this.buildRagPrompt(question, chunks);
 
     if (this.mock) {
       return {
         answer: this.createMockRagAnswer(question, chunks),
         chunks,
-        prompt
+        prompt,
+        retrieval
       };
     }
 
@@ -332,7 +404,7 @@ export class RagAgent {
       ],
       700
     );
-    return { answer: completion.answer, chunks, prompt };
+    return { answer: completion.answer, chunks, prompt, retrieval };
   }
 
   createMockRagAnswer(question, chunks) {
