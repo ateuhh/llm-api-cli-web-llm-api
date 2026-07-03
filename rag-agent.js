@@ -29,6 +29,7 @@ const STOP_WORDS = new Set([
 
 const DEFAULT_FILES = [
   "README.md",
+  "package.json",
   "agent.js",
   "mcp-server.js",
   "mcp-pipeline-agent.js",
@@ -39,7 +40,9 @@ const DEFAULT_FILES = [
   "swarm-agent.js",
   "task-state-machine-agent.js",
   "context-strategy-agent.js",
-  "layered-memory-agent.js"
+  "layered-memory-agent.js",
+  "rag-memory-chat.js",
+  "rag-chat-cli.js"
 ];
 
 export const CONTROL_QUESTIONS = [
@@ -387,21 +390,21 @@ export class RagAgent {
     return completion.answer;
   }
 
-  async askWithRag(question, { preferredSources = [], mode = "enhanced" } = {}) {
+  async askWithRag(question, { preferredSources = [], mode = "enhanced", searchQuestion = question } = {}) {
     const retrieval = mode === "baseline"
       ? {
           rewrittenQuery: question,
           candidates: [],
           reranked: [],
           filtered: [],
-          selected: this.search(question, this.topK, preferredSources, { rewrite: false }),
+          selected: this.search(searchQuestion, this.topK, preferredSources, { rewrite: false }),
           threshold: null,
           topKBefore: this.topK,
           topKAfter: this.topK
         }
       : this.rerankAndFilter(
-          question,
-          this.search(question, this.candidateTopK, preferredSources, { rewrite: true }),
+          searchQuestion,
+          this.search(searchQuestion, this.candidateTopK, preferredSources, { rewrite: true }),
           preferredSources
         );
     const chunks = retrieval.selected;

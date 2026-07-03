@@ -13,5 +13,9 @@ mcp-scheduler-tasks.json
 mcp-scheduler-tasks.json.tmp
 mcp-output/
 document-index/
+rag-chat-state.json
+rag-chat-state.json.tmp
+rag-chat-demo-*.json
+rag-chat-demo-*.json.tmp
 certs/*.crt
 certs/*.pem
