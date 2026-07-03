@@ -174,6 +174,8 @@ export class RagAgent {
     const normalized = content.replace(/\r\n/g, "\n");
     const chunks = [];
     let start = 0;
+    const headingMatches = [...normalized.matchAll(/^#{1,6}\s+(.+)$/gm)]
+      .map((match) => ({ index: match.index, title: match[1].trim() }));
 
     while (start < normalized.length) {
       const end = Math.min(start + this.chunkSize, normalized.length);
@@ -181,7 +183,8 @@ export class RagAgent {
 
       if (text) {
         const lineStart = normalized.slice(0, start).split("\n").length;
-        chunks.push({ source, lineStart, text });
+        const section = this.detectSection(source, normalized, start, text, headingMatches);
+        chunks.push({ source, lineStart, section, text });
       }
 
       if (end === normalized.length) {
@@ -191,6 +194,20 @@ export class RagAgent {
     }
 
     return chunks;
+  }
+
+  detectSection(source, fullText, start, chunkText, headingMatches) {
+    if (/\.md$/i.test(source)) {
+      const heading = headingMatches
+        .filter((match) => match.index <= start)
+        .at(-1);
+      return heading?.title || "document";
+    }
+
+    const before = fullText.slice(0, start + chunkText.length);
+    const codeSections = [...before.matchAll(/(?:class|function)\s+([A-Za-z0-9_]+)|export\s+class\s+([A-Za-z0-9_]+)/g)];
+    const lastCodeSection = codeSections.at(-1);
+    return lastCodeSection?.[1] || lastCodeSection?.[2] || source;
   }
 
   tokenize(text) {
@@ -318,10 +335,11 @@ export class RagAgent {
       candidates,
       reranked,
       filtered,
-      selected: (filtered.length > 0 ? filtered : reranked).slice(0, this.topK),
+      selected: filtered.slice(0, this.topK),
       threshold: this.relevanceThreshold,
       topKBefore: candidates.length,
-      topKAfter: Math.min(this.topK, (filtered.length > 0 ? filtered : reranked).length)
+      topKAfter: Math.min(this.topK, filtered.length),
+      weakContext: filtered.length === 0
     };
   }
 
@@ -329,7 +347,7 @@ export class RagAgent {
     const context = chunks
       .map((chunk, index) =>
         [
-          `[Источник ${index + 1}: ${chunk.source}:${chunk.lineStart}]`,
+          `[Источник ${index + 1}: ${chunk.source}; section=${chunk.section}; chunk_id=${chunk.id}; line=${chunk.lineStart}]`,
           chunk.text
         ].join("\n")
       )
@@ -337,8 +355,12 @@ export class RagAgent {
 
     return [
       "Ответь на вопрос только по контексту ниже.",
-      "Если в контексте нет ответа, так и скажи.",
-      "В конце перечисли использованные источники.",
+      "Если релевантного контекста нет или ответ не подтверждается цитатами, напиши: Не знаю. Уточните вопрос.",
+      "Верни строго три блока:",
+      "Ответ: краткий ответ по контексту.",
+      "Источники: список source + section + chunk_id.",
+      "Цитаты: короткие фрагменты из найденных чанков, которые подтверждают ответ.",
+      "Не добавляй факты без цитат.",
       "",
       `Вопрос: ${question}`,
       "",
@@ -383,14 +405,25 @@ export class RagAgent {
           preferredSources
         );
     const chunks = retrieval.selected;
+    if (mode === "enhanced" && retrieval.weakContext) {
+      return {
+        answer: this.createUnknownAnswer(),
+        chunks,
+        prompt: this.buildRagPrompt(question, chunks),
+        retrieval,
+        grounding: this.validateGrounding(this.createUnknownAnswer(), chunks)
+      };
+    }
     const prompt = this.buildRagPrompt(question, chunks);
 
     if (this.mock) {
+      const answer = this.createMockRagAnswer(question, chunks);
       return {
-        answer: this.createMockRagAnswer(question, chunks),
+        answer,
         chunks,
         prompt,
-        retrieval
+        retrieval,
+        grounding: this.validateGrounding(answer, chunks)
       };
     }
 
@@ -398,32 +431,151 @@ export class RagAgent {
       [
         {
           role: "system",
-          content: "Ты RAG-агент. Отвечай только по переданному контексту проекта."
+          content: [
+            "Ты RAG-агент. Отвечай только по переданному контексту проекта.",
+            "Каждый ответ обязан содержать блоки Ответ, Источники и Цитаты.",
+            "В источниках указывай source, section и chunk_id.",
+            "Если контекст слабый или не подтверждает ответ, скажи: Не знаю. Уточните вопрос."
+          ].join(" ")
         },
         { role: "user", content: prompt }
       ],
       700
     );
-    return { answer: completion.answer, chunks, prompt, retrieval };
+    const answer = this.ensureGroundedRealAnswer(completion.answer, chunks);
+    return {
+      answer,
+      chunks,
+      prompt,
+      retrieval,
+      grounding: this.validateGrounding(answer, chunks)
+    };
   }
 
   createMockRagAnswer(question, chunks) {
     if (chunks.length === 0) {
-      return "Ответ с RAG: релевантные чанки не найдены.";
+      return this.createUnknownAnswer();
     }
 
-    const sources = chunks
-      .map((chunk) => `${chunk.source}:${chunk.lineStart}`)
-      .join(", ");
     const facts = this.extractUsefulLines(question, chunks).slice(0, 6);
     const terms = this.extractImportantTerms(chunks).slice(0, 25);
+    const citations = this.buildCitations(question, chunks).slice(0, 4);
+    const sources = this.buildSources(chunks);
 
     return [
-      "Ответ с RAG:",
+      "Ответ:",
       ...facts.map((fact) => `- ${fact}`),
       terms.length > 0 ? `Команды и идентификаторы из контекста: ${terms.join(", ")}.` : "",
-      `Источники: ${sources}.`
+      "",
+      "Источники:",
+      ...sources.map((source) => `- ${source}`),
+      "",
+      "Цитаты:",
+      ...citations.map((citation) => `- «${citation.quote}» (${citation.source}; section=${citation.section}; chunk_id=${citation.chunk_id})`)
     ].filter(Boolean).join("\n");
+  }
+
+  createUnknownAnswer() {
+    return [
+      "Ответ:",
+      "Не знаю. Уточните вопрос.",
+      "",
+      "Источники:",
+      "- нет релевантных источников выше порога",
+      "",
+      "Цитаты:",
+      "- нет цитат, потому что релевантный контекст не найден"
+    ].join("\n");
+  }
+
+  buildSources(chunks) {
+    return chunks.map((chunk) =>
+      `${chunk.source}; section=${chunk.section}; chunk_id=${chunk.id}; line=${chunk.lineStart}`
+    );
+  }
+
+  buildCitations(question, chunks) {
+    const usefulLines = this.extractUsefulLines(question, chunks);
+    const citations = [];
+
+    for (const chunk of chunks) {
+      const lines = chunk.text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length >= 8);
+      const preferred = lines.find((line) => usefulLines.includes(line.replace(/^[-*]\s*/, ""))) || lines[0];
+
+      if (preferred) {
+        citations.push({
+          source: chunk.source,
+          section: chunk.section,
+          chunk_id: chunk.id,
+          quote: this.truncateQuote(preferred.replace(/^[-*]\s*/, ""))
+        });
+      }
+    }
+
+    return citations;
+  }
+
+  truncateQuote(text, maxLength = 180) {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    return normalized.length <= maxLength
+      ? normalized
+      : `${normalized.slice(0, maxLength - 1).trim()}...`;
+  }
+
+  ensureGroundedRealAnswer(answer, chunks) {
+    const hasSources = /Источники:/i.test(answer);
+    const hasCitations = /Цитаты:/i.test(answer);
+
+    if (hasSources && hasCitations) {
+      return answer;
+    }
+
+    return [
+      answer.trim(),
+      "",
+      !hasSources ? "Источники:" : "",
+      !hasSources ? this.buildSources(chunks).map((source) => `- ${source}`).join("\n") : "",
+      "",
+      !hasCitations ? "Цитаты:" : "",
+      !hasCitations ? this.buildCitations("", chunks).map((citation) =>
+        `- «${citation.quote}» (${citation.source}; section=${citation.section}; chunk_id=${citation.chunk_id})`
+      ).join("\n") : ""
+    ].filter(Boolean).join("\n");
+  }
+
+  validateGrounding(answer, chunks) {
+    if (/не знаю/i.test(answer)) {
+      return {
+        hasSources: true,
+        hasCitations: true,
+        meaningMatchesCitations: true,
+        citationCount: 0
+      };
+    }
+
+    const normalized = answer.toLowerCase();
+    const hasSources = /источники:/i.test(answer) && chunks.every((chunk) =>
+      normalized.includes(chunk.source.toLowerCase()) && normalized.includes(`chunk_id=${chunk.id}`.toLowerCase())
+    );
+    const quotedFragments = [...answer.matchAll(/«([^»]{8,})»/g)].map((match) => match[1]);
+    const contextText = chunks.map((chunk) => chunk.text.replace(/\s+/g, " ")).join("\n");
+    const hasCitations = /цитаты:/i.test(answer) && quotedFragments.length > 0 && quotedFragments.every((quote) =>
+      contextText.includes(quote.replace(/\s+/g, " "))
+    );
+    const answerTokens = new Set(this.tokenize(answer));
+    const citationTokens = new Set(this.tokenize(quotedFragments.join(" ")));
+    const overlap = [...answerTokens].filter((token) => citationTokens.has(token)).length;
+    const meaningMatchesCitations = quotedFragments.length > 0 && overlap >= Math.min(3, answerTokens.size);
+
+    return {
+      hasSources,
+      hasCitations,
+      meaningMatchesCitations,
+      citationCount: quotedFragments.length
+    };
   }
 
   extractUsefulLines(question, chunks) {

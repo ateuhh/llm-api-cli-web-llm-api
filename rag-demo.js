@@ -6,6 +6,7 @@ const useRealApi = process.argv.includes("--real");
 const skipConfirmation = process.argv.includes("--yes");
 const questionArgIndex = process.argv.findIndex((arg) => arg === "--question");
 const singleQuestion = questionArgIndex >= 0 ? process.argv[questionArgIndex + 1] : "";
+const weakContextQuestion = "Какая температура плавления вымышленного металла кодексиума в атмосфере Юпитера?";
 
 if (useRealApi && !process.env.GIGACHAT_AUTH_KEY) {
   console.error("Для --real задайте GIGACHAT_AUTH_KEY.");
@@ -14,6 +15,7 @@ if (useRealApi && !process.env.GIGACHAT_AUTH_KEY) {
 
 if (useRealApi && !skipConfirmation) {
   console.log("Будет выполнено до 30 реальных запросов к GigaChat: без RAG, RAG baseline и улучшенный RAG для каждого вопроса.");
+  console.log("Дополнительно будет проверен weak-context режим без обращения к LLM, если релевантные чанки не найдены.");
   console.log("Запросы расходуют API-квоту. Остановить выполнение можно через Ctrl+C.");
   const cli = createInterface({ input, output });
   const confirmation = await cli.question('Введите "ДА", чтобы продолжить: ');
@@ -69,6 +71,20 @@ function formatRetrieval(retrieval) {
   ].join("\n");
 }
 
+function formatGrounding(grounding) {
+  if (!grounding) {
+    return "Проверка grounding: нет данных.";
+  }
+
+  return [
+    "Проверка grounding:",
+    `- источники есть: ${grounding.hasSources ? "да" : "нет"}`,
+    `- цитаты есть: ${grounding.hasCitations ? "да" : "нет"}`,
+    `- смысл подтвержден цитатами: ${grounding.meaningMatchesCitations ? "да" : "нет"}`,
+    `- количество цитат: ${grounding.citationCount}`
+  ].join("\n");
+}
+
 async function runQuestion(controlQuestion, index = 1) {
   console.log(`\n=== Вопрос ${index}: ${controlQuestion.question} ===`);
   console.log(`Ожидание: ${controlQuestion.expected.join(", ") || "не задано"}`);
@@ -95,6 +111,7 @@ async function runQuestion(controlQuestion, index = 1) {
   console.log(formatRetrieval(baselineRag.retrieval));
   console.log(`Найденные чанки: ${formatSources(baselineRag.chunks) || "нет"}`);
   console.log(baselineRag.answer);
+  console.log(formatGrounding(baselineRag.grounding));
   console.log(`Качество: ${baselineScore.matched.length}/${baselineScore.total}`);
 
   console.log("\n[Улучшенный RAG: rewrite + rerank/filter]");
@@ -102,22 +119,39 @@ async function runQuestion(controlQuestion, index = 1) {
   console.log(`Кандидаты до фильтрации: ${formatSources(enhancedRag.retrieval.candidates) || "нет"}`);
   console.log(`Выбранные чанки после фильтрации: ${formatSources(enhancedRag.chunks) || "нет"}`);
   console.log(enhancedRag.answer);
+  console.log(formatGrounding(enhancedRag.grounding));
   console.log(`Качество: ${enhancedScore.matched.length}/${enhancedScore.total}`);
 
   return {
     withoutScore,
     baselineScore,
-    enhancedScore
+    enhancedScore,
+    baselineGrounding: baselineRag.grounding,
+    enhancedGrounding: enhancedRag.grounding
   };
+}
+
+async function runWeakContextCheck() {
+  console.log(`\n=== Weak-context проверка: ${weakContextQuestion} ===`);
+  const result = await agent.askWithRag(weakContextQuestion, { mode: "enhanced" });
+
+  console.log(formatRetrieval(result.retrieval));
+  console.log(`Выбранные чанки после фильтрации: ${formatSources(result.chunks) || "нет"}`);
+  console.log(result.answer);
+  console.log(formatGrounding(result.grounding));
+
+  return result.grounding;
 }
 
 if (singleQuestion) {
   await runQuestion(findControlQuestion(singleQuestion));
+  await runWeakContextCheck();
 } else {
   const results = [];
   for (const [index, controlQuestion] of CONTROL_QUESTIONS.entries()) {
     results.push(await runQuestion(controlQuestion, index + 1));
   }
+  const weakGrounding = await runWeakContextCheck();
 
   const withoutTotal = results.reduce((sum, item) => sum + item.withoutScore.matched.length, 0);
   const baselineTotal = results.reduce((sum, item) => sum + item.baselineScore.matched.length, 0);
@@ -128,6 +162,14 @@ if (singleQuestion) {
   console.log(`Без RAG: ${withoutTotal}/${maxTotal}`);
   console.log(`RAG baseline: ${baselineTotal}/${maxTotal}`);
   console.log(`Улучшенный RAG: ${enhancedTotal}/${maxTotal}`);
+  console.log(
+    `Grounding улучшенного RAG: ${results.filter((item) =>
+      item.enhancedGrounding.hasSources &&
+      item.enhancedGrounding.hasCitations &&
+      item.enhancedGrounding.meaningMatchesCitations
+    ).length}/${results.length}`
+  );
+  console.log(`Weak-context режим "не знаю": ${weakGrounding.meaningMatchesCitations ? "работает" : "требует проверки"}`);
   console.log(
     enhancedTotal >= baselineTotal
       ? "Query rewrite + rerank/filter дали не хуже или лучше качество, а список чанков стал контролируемым."
