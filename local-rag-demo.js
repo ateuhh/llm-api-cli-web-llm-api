@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import { DocumentIndexer } from "./document-indexer.js";
 import { LocalRagAgent } from "./local-rag-agent.js";
 
-const compareCloud = process.argv.includes("--compare-cloud");
+let compareCloud = process.argv.includes("--compare-cloud");
 const questions = [
   "Какая команда запускает MCP pipeline из search, summarize и save?",
   "Какие состояния есть у Task State Machine?",
@@ -46,6 +46,21 @@ function printResult(label, result, agent) {
   console.log(result.answer);
 }
 
+function explainCloudError(error) {
+  if (/сертификату НУЦ Минцифры|SELF_SIGNED_CERT_IN_CHAIN/i.test(error.message)) {
+    return [
+      "Облачное сравнение не выполнено: Node.js не доверяет сертификату НУЦ Минцифры.",
+      "Запустите secure-команду:",
+      "",
+      "GIGACHAT_AUTH_KEY=\"ваш_ключ\" npm run local-rag:secure -- --compare-cloud",
+      "",
+      "Локальный RAG при этом работает без сертификата и облака: npm run local-rag"
+    ].join("\n");
+  }
+
+  return `Облачное сравнение не выполнено: ${error.message}`;
+}
+
 const agent = new LocalRagAgent();
 const indexWasBuilt = await ensureIndex(agent.indexPath);
 await agent.loadIndex();
@@ -77,11 +92,17 @@ for (const [index, question] of questions.entries()) {
   };
 
   if (compareCloud) {
-    const cloud = await agent.askCloud(question);
-    printResult("Облачный RAG", cloud, agent);
-    item.cloudDurationMs = cloud.metrics.durationMs;
-    item.cloudPromptTokens = cloud.metrics.promptTokens;
-    item.cloudCompletionTokens = cloud.metrics.completionTokens;
+    try {
+      const cloud = await agent.askCloud(question);
+      printResult("Облачный RAG", cloud, agent);
+      item.cloudDurationMs = cloud.metrics.durationMs;
+      item.cloudPromptTokens = cloud.metrics.promptTokens;
+      item.cloudCompletionTokens = cloud.metrics.completionTokens;
+    } catch (error) {
+      console.error(`\n[Облачный RAG]\n${explainCloudError(error)}`);
+      item.cloudError = error.message;
+      compareCloud = false;
+    }
   }
 
   summary.push(item);

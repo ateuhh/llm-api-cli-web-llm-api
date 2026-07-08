@@ -160,7 +160,7 @@ LOCAL_RAG_REBUILD=false npm run local-rag
 
 ```bash
 export GIGACHAT_AUTH_KEY="ваш_ключ"
-npm run local-rag -- --compare-cloud
+npm run local-rag:secure -- --compare-cloud
 ```
 
 ## Проверка сохранения между запусками
