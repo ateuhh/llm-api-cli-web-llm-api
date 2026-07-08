@@ -127,6 +127,42 @@ OLLAMA_MODEL="qwen2.5:3b" npm run local-llm
 Реши задачу: у Пети в 2 раза больше яблок, чем у Маши, вместе 18. Сколько у каждого?
 ```
 
+## Локальная LLM + RAG
+
+Для задания с полностью локальным RAG добавлен отдельный режим:
+
+- `local-rag-agent.js` — загружает локальный индекс документов, ищет релевантные чанки и вызывает Ollama;
+- `local-rag-demo.js` — демонстрация RAG на контрольных вопросах;
+- `npm run local-rag` — запуск локального RAG.
+
+В этом режиме:
+
+- retrieval выполняется локально по JSON-индексу из `document-index/index-structured.json`;
+- embeddings считаются локально через hashing embedding из `document-indexer.js`;
+- генерация ответа выполняется локальной моделью через Ollama API;
+- облачные модели и API-ключи не нужны.
+
+Запуск:
+
+```bash
+ollama serve
+ollama pull llama3.2:1b
+npm run local-rag
+```
+
+По умолчанию demo пересобирает индекс, чтобы в него попали актуальные файлы проекта. Если нужно использовать уже сохраненный индекс без пересборки:
+
+```bash
+LOCAL_RAG_REBUILD=false npm run local-rag
+```
+
+Сравнение с облачной моделью можно включить отдельно:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ"
+npm run local-rag -- --compare-cloud
+```
+
 ## Проверка сохранения между запусками
 
 Первый запуск:

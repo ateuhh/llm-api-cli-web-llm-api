@@ -37,7 +37,8 @@
     "rag-chat-demo": "node rag-chat-demo.js",
     "rag-chat-demo:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node rag-chat-demo.js --real",
     "index-docs": "node document-index-demo.js",
-    "local-llm": "node local-llm-cli.js"
+    "local-llm": "node local-llm-cli.js",
+    "local-rag": "node local-rag-demo.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
