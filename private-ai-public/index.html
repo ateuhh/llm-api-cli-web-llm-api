@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Братский мотиватор</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <div class="topline">
+          <span>Private local AI</span>
+          <span id="status">проверка...</span>
+        </div>
+        <h1>Братский мотиватор</h1>
+        <p class="lead">Опиши ситуацию, а локальная LLM выдаст короткую мемную поддержку. Запрос уходит только на твой приватный сервис.</p>
+
+        <label for="message">Что случилось?</label>
+        <textarea id="message" maxlength="800" placeholder="Например: сегодня завалил собеседование и теперь не понимаю, что делать дальше"></textarea>
+
+        <div class="controls">
+          <label for="tone">Тон</label>
+          <select id="tone">
+            <option value="ironic">иронично</option>
+            <option value="soft">мягко</option>
+            <option value="hard">жестковато</option>
+          </select>
+          <button id="send" type="button">Подбодрить</button>
+        </div>
+
+        <p class="meta" id="limits">Лимиты загружаются...</p>
+      </section>
+
+      <section class="answer" aria-live="polite">
+        <div class="answer-head">
+          <h2>Ответ</h2>
+          <span id="usage">локальная модель</span>
+        </div>
+        <div id="output">Здесь появится ответ.</div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
