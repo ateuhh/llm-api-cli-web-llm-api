@@ -11,6 +11,7 @@ const DEFAULT_INDEX_FILES = [
   "local-rag-demo.js",
   "ollama-agent.js",
   "local-llm-cli.js",
+  "local-llm-optimization-demo.js",
   "mcp-server.js",
   "mcp-client.js",
   "mcp-agent.js",

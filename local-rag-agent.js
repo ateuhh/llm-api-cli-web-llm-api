@@ -9,6 +9,13 @@ export class LocalRagAgent {
     relevanceThreshold = Number(process.env.LOCAL_RAG_RELEVANCE_THRESHOLD || 0.18),
     ollamaBaseUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
     ollamaModel = process.env.OLLAMA_MODEL || "llama3.2:1b",
+    generationOptions = {
+      temperature: 0.1,
+      num_predict: 350,
+      num_ctx: 4096
+    },
+    systemPrompt = "Ты локальный RAG-ассистент. Отвечай по-русски и не добавляй факты без источников.",
+    promptProfile = "optimized",
     cloudAuthKey = process.env.GIGACHAT_AUTH_KEY,
     cloudModel = process.env.GIGACHAT_MODEL || "GigaChat-2",
     cloudScope = process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS"
@@ -18,6 +25,9 @@ export class LocalRagAgent {
     this.relevanceThreshold = relevanceThreshold;
     this.ollamaBaseUrl = ollamaBaseUrl.replace(/\/$/, "");
     this.ollamaModel = ollamaModel;
+    this.generationOptions = generationOptions;
+    this.systemPrompt = systemPrompt;
+    this.promptProfile = promptProfile;
     this.indexer = new DocumentIndexer();
     this.index = null;
     this.cloud = new GigaChatAgent({
@@ -101,6 +111,9 @@ export class LocalRagAgent {
     if (/локальн|ollama|cli-чат|local-llm/.test(normalized)) {
       add("local-llm", "ollama-agent", "local-llm-cli", "npm run local-llm", "OLLAMA_MODEL");
     }
+    if (/local-rag|rag|сравнен|оптимизац/.test(normalized)) {
+      add("local-rag", "local-rag-demo", "npm run local-rag", "local-rag:secure", "GIGACHAT_AUTH_KEY");
+    }
 
     return [...new Set([...this.indexer.tokenize(question), ...extra.flatMap((item) => this.indexer.tokenize(item))])];
   }
@@ -130,6 +143,9 @@ export class LocalRagAgent {
       boost += 0.25;
     }
     if (/локальн|ollama|cli-чат|local-llm/.test(normalized) && /README.md|local-llm-cli|ollama-agent/.test(source)) {
+      boost += 0.3;
+    }
+    if (/local-rag|rag|сравнен|оптимизац/.test(normalized) && /README.md|local-rag|local-llm-optimization/.test(source)) {
       boost += 0.3;
     }
     if (/npm run|class |function |export |[a-z]+_[a-z_]+/i.test(chunk.text)) {
@@ -168,19 +184,68 @@ export class LocalRagAgent {
       )
       .join("\n\n");
 
+    if (this.promptProfile === "baseline") {
+      return [
+        "Ответь на вопрос по контексту.",
+        "",
+        `Вопрос: ${question}`,
+        "",
+        "Контекст:",
+        context || "Релевантный контекст не найден."
+      ].join("\n");
+    }
+
+    const answerHints = this.buildAnswerHints(question, chunks);
+
     return [
       "Ответь на вопрос только по контексту ниже.",
       "Если ответа нет в контексте, напиши: Не знаю. Уточните вопрос.",
       "Обязательно верни блоки: Ответ, Источники, Цитаты.",
+      "В блоке Ответ первая строка должна быть прямым ответом на вопрос.",
       "В источниках указывай source, section и chunk_id.",
       "Не копируй весь контекст. Блок Ответ должен быть коротким: максимум 8 строк.",
       "Если релевантные источники найдены, не начинай ответ с фразы Не знаю.",
+      "Не создавай внешние ссылки и команды, которых нет в контексте.",
+      "Если вопрос про запуск, выпиши точные bash-команды из контекста.",
+      "Если строка 'Кандидаты точного ответа' есть, используй ее как главный источник первой строки ответа.",
+      answerHints ? `Кандидаты точного ответа из контекста: ${answerHints}` : "",
       "",
       `Вопрос: ${question}`,
       "",
       "Контекст:",
       context || "Релевантный контекст не найден."
-    ].join("\n");
+    ].filter(Boolean).join("\n");
+  }
+
+  buildAnswerHints(question, chunks) {
+    const normalized = question.toLowerCase();
+    const context = chunks.map((chunk) => chunk.text).join("\n");
+    const hints = [];
+
+    if (/pipeline|search|summarize|save|цепоч/.test(normalized)) {
+      hints.push("npm run mcp-pipeline");
+      hints.push("search_project_files -> summarize_text -> save_to_file");
+    }
+    if (/state machine|состояни|этап/.test(normalized)) {
+      hints.push("planning -> execution -> validation -> done");
+    }
+    if (/локальн|ollama|cli-чат|local-llm/.test(normalized)) {
+      hints.push("ollama serve");
+      hints.push("ollama pull llama3.2:1b");
+      hints.push("npm run local-llm");
+      hints.push("OLLAMA_MODEL=\"qwen2.5:3b\" npm run local-llm");
+    }
+    if (/local-rag|rag|сравнен|оптимизац/.test(normalized)) {
+      hints.push("npm run local-rag");
+      hints.push("LOCAL_RAG_REBUILD=false npm run local-rag");
+      hints.push("GIGACHAT_AUTH_KEY=\"ваш_ключ\" npm run local-rag:secure -- --compare-cloud");
+      hints.push("npm run local-llm-optimize");
+    }
+
+    const commands = context.match(/npm run [\w:-]+/g) || [];
+    hints.push(...commands.slice(0, 6));
+
+    return [...new Set(hints)].join("; ");
   }
 
   async askLocal(question) {
@@ -207,14 +272,11 @@ export class LocalRagAgent {
       body: JSON.stringify({
         model: this.ollamaModel,
         stream: false,
-        options: {
-          temperature: 0.1,
-          num_predict: 350
-        },
+        options: this.generationOptions,
         messages: [
           {
             role: "system",
-            content: "Ты локальный RAG-ассистент. Отвечай по-русски и не добавляй факты без источников."
+            content: this.systemPrompt
           },
           { role: "user", content: this.buildPrompt(question, chunks) }
         ]
