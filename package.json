@@ -49,7 +49,9 @@
     "support-mcp-server": "node mcp-support-server.js",
     "support-assistant": "node support-assistant.js",
     "support-assistant:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node support-assistant.js",
-    "file-assistant": "node file-assistant.js"
+    "file-assistant": "node file-assistant.js",
+    "epic-decompose": "node epic-decomposer.js",
+    "epic-decompose:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node epic-decomposer.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
