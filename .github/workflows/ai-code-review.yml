@@ -1,0 +1,63 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure optional GigaChat CA
+        env:
+          GIGACHAT_CA_CERT: ${{ secrets.GIGACHAT_CA_CERT }}
+        run: |
+          mkdir -p .certs
+          if [ -n "$GIGACHAT_CA_CERT" ]; then
+            printf '%s\n' "$GIGACHAT_CA_CERT" > .certs/gigachat-ca.crt
+          else
+            touch .certs/gigachat-ca.crt
+          fi
+
+      - name: Generate AI review
+        env:
+          GIGACHAT_AUTH_KEY: ${{ secrets.GIGACHAT_AUTH_KEY }}
+          GIGACHAT_MODEL: ${{ vars.GIGACHAT_MODEL || 'GigaChat-2' }}
+          NODE_EXTRA_CA_CERTS: ${{ github.workspace }}/.certs/gigachat-ca.crt
+          PR_BASE_REF: origin/${{ github.base_ref }}
+          PR_HEAD_REF: HEAD
+        run: npm run pr-review -- --output ai-code-review.md
+
+      - name: Publish review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const body = fs.readFileSync("ai-code-review.md", "utf8");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });

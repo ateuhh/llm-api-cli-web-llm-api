@@ -292,6 +292,54 @@ npm run dev-assistant:secure
 /help Какие MCP-инструменты есть в проекте?
 ```
 
+## Автоматическое AI-ревью PR
+
+Для задания с автоматизацией ревью добавлен PR-пайплайн:
+
+- `.github/workflows/ai-code-review.yml` — GitHub Action запускается на `pull_request`;
+- `pr-review-agent.js` — собирает diff, список измененных файлов, git-ветку и RAG-контекст;
+- `npm run pr-review` — локальный запуск ревью;
+- `npm run pr-review:secure` — локальный запуск через GigaChat API с сертификатом НУЦ Минцифры.
+
+Что делает пайплайн:
+
+1. получает diff между base/head ветками PR;
+2. определяет измененные файлы;
+3. строит RAG-контекст из `README.md`, `project/docs/*.md` и релевантного кода;
+4. отправляет diff + RAG-контекст в GigaChat;
+5. публикует markdown-комментарий в PR:
+   - потенциальные баги;
+   - архитектурные проблемы;
+   - рекомендации;
+   - источники RAG-контекста.
+
+Для GitHub Action добавьте secret:
+
+```text
+GIGACHAT_AUTH_KEY=ваш_ключ
+```
+
+Если GitHub runner не доверяет сертификату GigaChat, добавьте второй secret с PEM-сертификатом:
+
+```text
+GIGACHAT_CA_CERT=-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----
+```
+
+Локальная проверка без API:
+
+```bash
+npm run pr-review -- --mock --base HEAD~1 --head HEAD --output ai-code-review.md
+```
+
+Локальная проверка через GigaChat:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ"
+npm run pr-review:secure -- --base HEAD~1 --head HEAD --output ai-code-review.md
+```
+
 ## Проверка сохранения между запусками
 
 Первый запуск:

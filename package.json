@@ -43,7 +43,9 @@
     "local-llm-optimize": "node local-llm-optimization-demo.js",
     "private-ai": "node private-ai-service.js",
     "dev-assistant": "node developer-assistant.js",
-    "dev-assistant:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node developer-assistant.js"
+    "dev-assistant:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node developer-assistant.js",
+    "pr-review": "node pr-review-agent.js",
+    "pr-review:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node pr-review-agent.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
