@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 
 const server = new McpServer({
@@ -27,7 +27,18 @@ async function collectSearchFiles(directory, result = []) {
     "certs",
     ".agents",
     ".codex",
-    "mcp-output"
+    "mcp-output",
+    "document-index",
+    "file-assistant-output"
+  ]);
+  const ignoredFiles = new Set([
+    "rag-chat-state.json",
+    "mcp-scheduler-tasks.json",
+    "agent-report.md",
+    "agent-repor1t.md",
+    "ai-code-review.md",
+    "rag-chat-demo-grounding.json",
+    "rag-chat-demo-orchestration.json"
   ]);
   const allowedExtensions = /\.(js|json|md|txt)$/i;
   const entries = await readdir(directory, { withFileTypes: true });
@@ -42,12 +53,23 @@ async function collectSearchFiles(directory, result = []) {
       continue;
     }
 
-    if (entry.isFile() && allowedExtensions.test(entry.name)) {
+    if (entry.isFile() && allowedExtensions.test(entry.name) && !ignoredFiles.has(entry.name)) {
       result.push(path);
     }
   }
 
   return result;
+}
+
+function resolveSafeProjectPath(cwd, path) {
+  const projectRoot = resolve(cwd);
+  const target = resolve(projectRoot, path);
+
+  if (!target.startsWith(projectRoot)) {
+    throw new Error("Путь выходит за пределы проекта.");
+  }
+
+  return target;
 }
 
 function summarizeMatches({ title, query, matches, maxLines }) {
@@ -75,6 +97,50 @@ function summarizeMatches({ title, query, matches, maxLines }) {
 
   return lines.join("\n");
 }
+
+server.registerTool(
+  "list_project_files",
+  {
+    description: "Возвращает список текстовых файлов проекта.",
+    inputSchema: {
+      cwd: z.string().default(".").describe("Папка проекта."),
+      maxResults: z.number().int().positive().default(80).describe("Максимум файлов.")
+    }
+  },
+  async ({ cwd, maxResults }) => {
+    const files = await collectSearchFiles(cwd);
+    return jsonTextResult({
+      cwd,
+      total: files.length,
+      files: files
+        .slice(0, maxResults)
+        .map((file) => relative(resolve(cwd), isAbsolute(file) ? file : resolve(file)))
+    });
+  }
+);
+
+server.registerTool(
+  "read_project_file",
+  {
+    description: "Читает текстовый файл проекта с защитой от выхода за пределы рабочей папки.",
+    inputSchema: {
+      path: z.string().min(1).describe("Относительный путь к файлу проекта."),
+      cwd: z.string().default(".").describe("Папка проекта."),
+      maxChars: z.number().int().positive().default(12000).describe("Максимум символов.")
+    }
+  },
+  async ({ path, cwd, maxChars }) => {
+    const safePath = resolveSafeProjectPath(cwd, path);
+    const content = await readFile(safePath, "utf8");
+
+    return jsonTextResult({
+      path,
+      chars: content.length,
+      truncated: content.length > maxChars,
+      content: content.slice(0, maxChars)
+    });
+  }
+);
 
 server.registerTool(
   "search_project_files",
@@ -164,8 +230,9 @@ server.registerTool(
     }
   },
   async ({ path, content, append }) => {
+    const safePath = resolveSafeProjectPath(".", path);
     const existingContent = append
-      ? await readFile(path, "utf8").catch((error) => {
+      ? await readFile(safePath, "utf8").catch((error) => {
           if (error.code === "ENOENT") {
             return "";
           }
@@ -176,9 +243,9 @@ server.registerTool(
       ? `${existingContent.trimEnd()}\n\n${content}\n`
       : `${content}\n`;
 
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, savedContent, "utf8");
-    const fileStat = await stat(path);
+    await mkdir(dirname(safePath), { recursive: true });
+    await writeFile(safePath, savedContent, "utf8");
+    const fileStat = await stat(safePath);
 
     return jsonTextResult({
       path,
