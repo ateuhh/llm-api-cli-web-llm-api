@@ -1,0 +1,16 @@
+{
+  "users": [
+    {
+      "id": "u-101",
+      "name": "Анна Петрова",
+      "email": "anna.petrov@example.ru",
+      "workspaceId": "w-01",
+      "role": "admin",
+      "plan": "Business",
+      "emailVerified": true,
+      "ssoEnabled": true,
+      "allowedDomain": "example.ru",
+      "lastLoginAt": "2026-07-16T10:21:00+03:00"
+    }
+  ]
+}

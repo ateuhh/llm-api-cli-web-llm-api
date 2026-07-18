@@ -45,7 +45,10 @@
     "dev-assistant": "node developer-assistant.js",
     "dev-assistant:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node developer-assistant.js",
     "pr-review": "node pr-review-agent.js",
-    "pr-review:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node pr-review-agent.js"
+    "pr-review:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node pr-review-agent.js",
+    "support-mcp-server": "node mcp-support-server.js",
+    "support-assistant": "node support-assistant.js",
+    "support-assistant:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node support-assistant.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"

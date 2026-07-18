@@ -1,0 +1,76 @@
+{
+  "nextId": 5,
+  "items": [
+    {
+      "id": 1,
+      "title": "Исправить зависание экспорта больших проектов",
+      "description": "Пользователи сообщают, что экспорт больших проектов иногда долго остается в статусе running и не показывает понятный прогресс.",
+      "type": "bug",
+      "area": "export",
+      "status": "in_progress",
+      "source": "support-chat",
+      "createdAt": "2026-07-15T10:00:00+03:00",
+      "keywords": [
+        "экспорт",
+        "export",
+        "running",
+        "большой",
+        "проект",
+        "зависает"
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Добавить повторную отправку письма подтверждения",
+      "description": "Нужна заметная кнопка повторной отправки email verification, если письмо подтверждения не пришло.",
+      "type": "feature",
+      "area": "notifications",
+      "status": "planned",
+      "source": "support-chat",
+      "createdAt": "2026-07-16T14:30:00+03:00",
+      "keywords": [
+        "email",
+        "письмо",
+        "подтверждение",
+        "повторная",
+        "отправка"
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Добавить темную тему интерфейса",
+      "description": "Пользователи просят темную тему для вечерней работы с задачами.",
+      "type": "feature",
+      "area": "interface",
+      "status": "in_progress",
+      "source": "support-chat",
+      "createdAt": "2026-07-17T09:15:00+03:00",
+      "keywords": [
+        "темная",
+        "тема",
+        "интерфейс",
+        "dark",
+        "theme"
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Улучшить сценарий авторизации",
+      "description": "Добавьте вход через Telegram",
+      "type": "feature",
+      "area": "auth",
+      "status": "triage",
+      "source": "support-chat",
+      "createdAt": "2026-07-18T15:15:07.187Z",
+      "keywords": [
+        "улучшить",
+        "сценар",
+        "авторизац",
+        "вход",
+        "через",
+        "telegram",
+        "auth"
+      ]
+    }
+  ]
+}
