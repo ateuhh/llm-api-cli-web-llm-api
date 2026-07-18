@@ -249,6 +249,49 @@ PRIVATE_AI_HOST=0.0.0.0 npm run private-ai
 
 Перед этим убедитесь, что сеть доверенная.
 
+## Ассистент разработчика
+
+Для задания с developer assistant добавлен CLI-ассистент:
+
+- `developer-assistant.js` — команда `/help`, RAG по документации и MCP-контекст проекта;
+- `project/docs/` — дополнительные документы для RAG;
+- `npm run dev-assistant` — запуск через GigaChat API;
+- `npm run dev-assistant:secure` — запуск через GigaChat API с сертификатом НУЦ Минцифры;
+- `npm run dev-assistant -- --mock` — запуск без LLM для проверки retrieval и MCP.
+
+Источники RAG:
+
+- `README.md`;
+- `project/docs/*.md`.
+
+MCP-инструмент:
+
+- `git_status` — ассистент получает текущую git-ветку и список измененных файлов через MCP.
+
+Запуск:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ"
+npm run dev-assistant
+```
+
+Если нужен сертификат НУЦ Минцифры:
+
+```bash
+export GIGACHAT_AUTH_KEY="ваш_ключ"
+npm run dev-assistant:secure
+```
+
+Примеры команд внутри CLI:
+
+```text
+/branch
+/sources
+/help Расскажи о структуре проекта
+/help Как устроен приватный AI-сервис?
+/help Какие MCP-инструменты есть в проекте?
+```
+
 ## Проверка сохранения между запусками
 
 Первый запуск:

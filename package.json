@@ -41,7 +41,9 @@
     "local-rag": "node local-rag-demo.js",
     "local-rag:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node local-rag-demo.js",
     "local-llm-optimize": "node local-llm-optimization-demo.js",
-    "private-ai": "node private-ai-service.js"
+    "private-ai": "node private-ai-service.js",
+    "dev-assistant": "node developer-assistant.js",
+    "dev-assistant:secure": "NODE_EXTRA_CA_CERTS=./certs/russian_trusted_root_ca_pem.crt node developer-assistant.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
